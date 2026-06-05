@@ -310,19 +310,21 @@ class _AddSlotScreenState extends State<AddSlotScreen> {
               padding: const EdgeInsets.fromLTRB(4, 8, 16, 4),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      color: _green,
-                    ),
-                    onPressed: () => context.pop(),
-                  ),
+                  // IconButton(
+                  //   icon: const Icon(
+                  //     Icons.arrow_back_ios_new_rounded,
+                  //     color: _green,
+                  //   ),
+                  //   onPressed: () => context.pop(),
+                  // ),
+                  
                   const Text(
-                    'Manage Slots',
+                    '  Manage Slots',
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 28,
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF0E1A13),
+                      letterSpacing: -0.5,
                     ),
                   ),
                   const Spacer(),

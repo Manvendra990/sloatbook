@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:slotbooking/Admin/admin_provide.dart';
+import 'package:slotbooking/Admin/navbar/adminNavbar.dart';
 
 import '../../../data/models/booking_model.dart';
 
@@ -63,6 +64,7 @@ class RevenueReportScreen extends ConsumerWidget {
               },
             ),
           ),
+          const AdminNavBar(currentIndex: 4),
         ],
       ),
     );
