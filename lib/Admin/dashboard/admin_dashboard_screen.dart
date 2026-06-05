@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:slotbooking/Admin/navbar/adminNavbar.dart';
+import 'package:slotbooking/Admin/header/admin_header.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -13,7 +14,7 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _isMonthly = true;
 
-// hellooo
+  // hellooo
   static const _green = Color(0xFF0D5C3A);
   static const _greenLight = Color(0xFFE8F5EE);
   static const _bg = Color(0xFFF0F3F0);
@@ -97,7 +98,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         child: Column(
           children: [
             // ── Top bar ────────────────────────────────────────────────────
-            _buildTopBar(context),
+            // _buildTopBar(context),
+            AdminHeader(title: "KINETIC"),
 
             // ── Scrollable content ─────────────────────────────────────────
             Expanded(
@@ -147,11 +149,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     _buildTrendsCard(),
                     const SizedBox(height: 16),
 
-                    // ── Action buttons 
-                    // 
+                    // ── Action buttons
+                    //
                     // ─────────────────────────────────────
-
-                    
                     Row(
                       children: [
                         Expanded(

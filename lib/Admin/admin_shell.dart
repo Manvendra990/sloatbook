@@ -2,13 +2,46 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-class AdminShell extends StatelessWidget {
+class AdminShell extends StatefulWidget {
   final Widget child;
   const AdminShell({super.key, required this.child});
 
   @override
+  State<AdminShell> createState() => _AdminShellState();
+}
+
+class _AdminShellState extends State<AdminShell> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  void openDrawer() {
+    _scaffoldKey.currentState?.openDrawer();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(drawer: const _AdminDrawer(), body: child);
+    return AdminShellScope(
+      openDrawer: openDrawer,
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawer: const _AdminDrawer(),
+        body: widget.child,
+      ),
+    );
+  }
+}
+
+class AdminShellScope extends InheritedWidget {
+  final VoidCallback openDrawer;
+
+  const AdminShellScope({required this.openDrawer, required super.child});
+
+  static AdminShellScope? of(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<AdminShellScope>();
+  }
+
+  @override
+  bool updateShouldNotify(AdminShellScope oldWidget) {
+    return openDrawer != oldWidget.openDrawer;
   }
 }
 

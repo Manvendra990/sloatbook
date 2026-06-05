@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:slotbooking/Admin/admin_provide.dart';
 
-import '../../../data/models/ground_model.dart';
+// import '../../../data/models/ground_model.dart';
 import '../../../data/models/slot_model.dart';
 
 class SlotManagementScreen extends ConsumerWidget {
