@@ -126,6 +126,13 @@ final GoRouter router = GoRouter(
       },
     ),
 
+     GoRoute(
+      path: '/admin/revenue',
+      builder: (context, state) {
+        return const AdminShell(child: RevenueReportScreen());
+      },
+    ),
+
     //// user  screens
     GoRoute(
       path: '/user/home',
