@@ -7,6 +7,7 @@ import 'package:slotbooking/Admin/ground/add_edit_ground_screen.dart';
 import 'package:slotbooking/Admin/ground/my_grounds_screen.dart';
 import 'package:slotbooking/Admin/revenue/revenue_report_screen.dart';
 import 'package:slotbooking/Admin/slots/slot_management_screen.dart';
+import 'package:slotbooking/User/booking/bookinghistory.dart';
 import 'package:slotbooking/User/home/dashboard.dart';
 import 'package:slotbooking/User/home/ground_detail.dart';
 import 'package:slotbooking/User/payments/booking_payment_screen.dart';
@@ -159,6 +160,18 @@ final GoRouter router = GoRouter(
       builder: (context, state) {
         final bookingData = state.extra as Map<String, dynamic>? ?? {};
         return BookingPaymentScreen(bookingData: bookingData);
+      },
+    ),
+    GoRoute(
+      path: '/user/transaction',
+      builder: (context, state) {
+        return TransactionHistoryScreen();
+      },
+    ),
+    GoRoute(
+      path: '/user/booking_history',
+      builder: (context, state) {
+        return BookingHistoryScreen();
       },
     ),
   ],

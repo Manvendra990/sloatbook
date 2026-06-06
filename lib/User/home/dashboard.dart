@@ -4,6 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:slotbooking/Admin/navbar/adminNavbar.dart';
+import 'package:slotbooking/User/navbar/usernavbar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -121,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: _green,
         child: const Icon(Icons.add, color: Colors.white),
       ),
-      bottomNavigationBar: _buildBottomNav(),
+      bottomNavigationBar: const UserNavBar(currentIndex: 0),
     );
   }
 
@@ -347,71 +349,6 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         );
       },
-    );
-  }
-
-  Widget _buildBottomNav() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, -3),
-          ),
-        ],
-      ),
-      child: BottomNavigationBar(
-        currentIndex: 0,
-        selectedItemColor: _green,
-        unselectedItemColor: Colors.grey[400],
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-        unselectedLabelStyle: const TextStyle(fontSize: 11),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.grid_view_outlined),
-            activeIcon: Icon(Icons.grid_view_rounded),
-            label: 'Slots',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_month_outlined),
-            activeIcon: Icon(Icons.calendar_month_rounded),
-            label: 'Bookings',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline_rounded),
-            activeIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
-        onTap: (index) {
-          switch (index) {
-            case 0:
-              break;
-            case 1:
-              context.push('/slots');
-              break;
-            case 2:
-              context.push('/bookings');
-              break;
-            case 3:
-              context.push('/profile');
-              break;
-          }
-        },
-      ),
     );
   }
 }

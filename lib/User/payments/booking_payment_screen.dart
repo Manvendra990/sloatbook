@@ -1,3 +1,5 @@
+//
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -14,7 +16,7 @@ class BookingPaymentScreen extends StatefulWidget {
 }
 
 class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
-  static const _razorpayKey = 'rzp_test_1234567890abcdef';
+  static const _razorpayKey = 'rzp_test_Sx8TW4wytAZwan';
   late RazorpayService _razorpayService;
   bool _isProcessing = false;
 
@@ -33,6 +35,8 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     _razorpayService.dispose();
     super.dispose();
   }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   DateTime? _toDateTime(dynamic value) {
     if (value is DateTime) return value;
@@ -55,7 +59,6 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     if (widget.bookingData['durationLabel'] is String) {
       return widget.bookingData['durationLabel'] as String;
     }
-
     final durationMap = widget.bookingData['timeDuretion'];
     if (durationMap is Map) {
       final hours = durationMap['hour'] is num
@@ -68,7 +71,6 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
       if (hours > 0) return '${hours}h';
       if (minutes > 0) return '${minutes}m';
     }
-
     return '1h';
   }
 
@@ -82,12 +84,21 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
   DateTime? get _startTime => _toDateTime(widget.bookingData['startTime']);
   DateTime? get _endTime => _toDateTime(widget.bookingData['endTime']);
 
+  String get _userId => widget.bookingData['userId'] as String? ?? '';
+  String get _userPhone => widget.bookingData['userPhone'] as String? ?? '';
+  String get _adminId => widget.bookingData['adminId'] as String? ?? '';
+  String get _groundId => widget.bookingData['groundId'] as String? ?? '';
+  String get _groundName =>
+      widget.bookingData['groundName'] as String? ?? 'Ground';
+
   void _showSnack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
   }
+
+  // ─── Payment flow ─────────────────────────────────────────────────────────
 
   Future<void> _openCheckout() async {
     if (_isProcessing) return;
@@ -98,7 +109,7 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
 
     final alreadyBooked = await FirebaseFirestore.instance
         .collection('bookings')
-        .where('groundId', isEqualTo: widget.bookingData['groundId'])
+        .where('groundId', isEqualTo: _groundId)
         .where('date', isEqualTo: widget.bookingData['date'])
         .where('slotId', isEqualTo: widget.bookingData['slotId'])
         .where('status', isEqualTo: 'confirmed')
@@ -112,10 +123,10 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     final options = {
       'key': _razorpayKey,
       'amount': _amount * 100,
-      'name': widget.bookingData['groundName'] as String? ?? 'Ground Booking',
+      'name': _groundName,
       'description':
           widget.bookingData['slotLabel'] as String? ?? 'Slot payment',
-      'prefill': {'contact': widget.bookingData['userPhone'] ?? ''},
+      'prefill': {'contact': _userPhone},
       'theme': {'color': '#0D5C3A'},
     };
 
@@ -130,7 +141,8 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      await _createBooking(response.paymentId ?? '');
+      await _saveBookingAndTransaction(response.paymentId ?? '');
+
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -138,9 +150,9 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          title: const Text('Payment successful'),
+          title: const Text('Payment Successful 🎉'),
           content: const Text(
-            'Your booking has been confirmed. You can view it in your bookings.',
+            'Your booking has been confirmed.\nYou can view it in your bookings.',
           ),
           actions: [
             ElevatedButton(
@@ -148,11 +160,12 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0D5C3A),
               ),
-              child: const Text('Done'),
+              child: const Text('Done', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
       );
+
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
@@ -163,6 +176,8 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
+    debugPrint('Payment error code   : ${response.code}');
+    debugPrint('Payment error message: ${response.message}');
     _showSnack('Payment failed: ${response.message}');
   }
 
@@ -170,20 +185,62 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     _showSnack('External wallet selected: ${response.walletName}');
   }
 
-  Future<void> _createBooking(String razorpayPaymentId) async {
+  // ─── Firestore writes ─────────────────────────────────────────────────────
+  //
+  //  Three collections written atomically in one batch:
+  //
+  //  1. /user_bookings/{bookingId}
+  //       → queried by userId  → user's booking history screen
+  //
+  //  2. /user_transactions/{bookingId}
+  //       → queried by userId  → user's payment / transaction history screen
+  //
+  //  3. /admin_revenue/{adminId}/transactions/{bookingId}
+  //       → scoped under adminId → admin revenue & income report
+  //
+  //  All three share the same bookingId so cross-collection joins are trivial.
+  //
+  // ──────────────────────────────────────────────────────────────────────────
+  Future<void> _saveBookingAndTransaction(String razorpayPaymentId) async {
     final startTime = _startTime;
     final endTime = _endTime;
+    final now = DateTime.now();
+
     final dateKey = widget.bookingData['date'] is String
         ? widget.bookingData['date'] as String
         : startTime != null
         ? DateFormat('yyyy-MM-dd').format(startTime)
-        : DateFormat('yyyy-MM-dd').format(DateTime.now());
+        : DateFormat('yyyy-MM-dd').format(now);
 
-    final bookingData = {
-      'groundId': widget.bookingData['groundId'] ?? '',
-      'groundName': widget.bookingData['groundName'] ?? '',
-      'userId': widget.bookingData['userId'] ?? '',
-      'userPhone': widget.bookingData['userPhone'] ?? '',
+    final durationMap =
+        widget.bookingData['timeDuretion'] ??
+        {
+          'hour': (startTime != null && endTime != null)
+              ? endTime.difference(startTime).inHours
+              : 0,
+          'minute': (startTime != null && endTime != null)
+              ? endTime.difference(startTime).inMinutes.remainder(60)
+              : 0,
+        };
+
+    final db = FirebaseFirestore.instance;
+    final bookingRef = db.collection('user_bookings').doc();
+    final bookingId = bookingRef.id;
+
+    // ── 1. /user_bookings/{bookingId} ─────────────────────────────────────
+    final bookingDoc = {
+      'bookingId': bookingId,
+
+      // ── User (for user-side booking history queries) ──
+      'userId': _userId,
+      'userPhone': _userPhone,
+
+      // ── Ground & admin ──
+      'groundId': _groundId,
+      'groundName': _groundName,
+      'adminId': _adminId,
+
+      // ── Slot ──
       'date': dateKey,
       'slotId': widget.bookingData['slotId'] ?? '',
       'slotLabel': widget.bookingData['slotLabel'] ?? '',
@@ -198,47 +255,124 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
               DateTime(startTime.year, startTime.month, startTime.day),
             )
           : null,
-      'timeDuretion':
-          widget.bookingData['timeDuretion'] ??
-          {
-            'hour': startTime != null && endTime != null
-                ? endTime.difference(startTime).inHours
-                : 0,
-            'minute': startTime != null && endTime != null
-                ? endTime.difference(startTime).inMinutes.remainder(60)
-                : 0,
-          },
+      'timeDuretion': durationMap,
+
+      // ── Payment ──
       'amount': _amount,
+      'currency': 'INR',
+      'razorpayPaymentId': razorpayPaymentId,
+
+      // ── Status ──
       'bookingStatus': 'confirmed',
       'paymentStatus': 'paid',
       'status': 'confirmed',
-      'razorpayPaymentId': razorpayPaymentId,
+
       'createdAt': FieldValue.serverTimestamp(),
-      'adminId': widget.bookingData['adminId'] ?? '',
     };
 
-    final db = FirebaseFirestore.instance;
-    final bookingRef = await db.collection('bookings').add(bookingData);
-    await db.collection('user_bookings').doc(bookingRef.id).set({
-      ...bookingData,
-      'bookingId': bookingRef.id,
-    });
+    // ── 2. /user_transactions/{bookingId} ─────────────────────────────────
+    final transactionDoc = {
+      'transactionId': bookingId,
+      'bookingId': bookingId, // ← cross-ref to user_bookings
+      // ── User (primary key for user transaction history) ──
+      'userId': _userId,
+      'userPhone': _userPhone,
+
+      // ── What was paid for ──
+      'groundId': _groundId,
+      'groundName': _groundName,
+      'adminId': _adminId, // ← cross-ref to admin_revenue
+      'slotId': widget.bookingData['slotId'] ?? '',
+      'slotLabel': widget.bookingData['slotLabel'] ?? '',
+      'date': dateKey,
+
+      // ── Payment details ──
+      'amount': _amount,
+      'currency': 'INR',
+      'paymentMethod': 'razorpay',
+      'razorpayPaymentId': razorpayPaymentId,
+      'paymentStatus': 'success',
+      'transactionType': 'booking_payment',
+
+      'paidAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+
+    // ── 3. /admin_revenue/{adminId}/transactions/{bookingId} ──────────────
+    final adminRevenueDoc = {
+      'transactionId': bookingId,
+      'bookingId': bookingId, // ← cross-ref to user_bookings
+      // ── Admin (document path already scopes to adminId) ──
+      'adminId': _adminId,
+
+      // ── Ground ──
+      'groundId': _groundId,
+      'groundName': _groundName,
+
+      // ── User (admin can see who paid) ──
+      'userId': _userId, // ← key link for admin → user lookup
+      'userPhone': _userPhone,
+
+      // ── Slot ──
+      'slotId': widget.bookingData['slotId'] ?? '',
+      'slotLabel': widget.bookingData['slotLabel'] ?? '',
+      'date': dateKey,
+      'slotDate': startTime != null
+          ? Timestamp.fromDate(
+              DateTime(startTime.year, startTime.month, startTime.day),
+            )
+          : null,
+
+      // ── Revenue figures ──
+      'amount': _amount,
+      'currency': 'INR',
+      'paymentMethod': 'razorpay',
+      'razorpayPaymentId': razorpayPaymentId,
+      'paymentStatus': 'success',
+
+      'paidAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+
+    // ── Atomic batch — all three succeed or all three fail ────────────────
+    final batch = db.batch();
+
+    batch.set(bookingRef, bookingDoc);
+
+    batch.set(
+      db.collection('user_transactions').doc(bookingId),
+      transactionDoc,
+    );
+
+    if (_adminId.isNotEmpty) {
+      batch.set(
+        db
+            .collection('admin_revenue')
+            .doc(_adminId)
+            .collection('transactions')
+            .doc(bookingId),
+        adminRevenueDoc,
+      );
+    }
+
+    await batch.commit();
   }
+
+  // ─── UI ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final groundName = widget.bookingData['groundName'] as String? ?? 'Ground';
     final slotLabel = widget.bookingData['slotLabel'] as String? ?? 'Slot';
     final bookingStatus =
         widget.bookingData['bookingStatus'] as String? ?? 'unavailable';
     final paymentStatus =
         widget.bookingData['paymentStatus'] as String? ?? 'unpaid';
-    final adminId = widget.bookingData['adminId'] as String? ?? '';
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Payment'),
         backgroundColor: const Color(0xFF0D5C3A),
+        foregroundColor: Colors.white,
       ),
       body: SafeArea(
         child: Padding(
@@ -262,7 +396,7 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
                       const SizedBox(height: 16),
                       _InfoCard(
                         title: 'Ground',
-                        value: groundName,
+                        value: _groundName,
                         icon: Icons.sports_outlined,
                       ),
                       const SizedBox(height: 12),
@@ -308,11 +442,11 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
                         value: paymentStatus.toUpperCase(),
                         icon: Icons.account_balance_wallet_rounded,
                       ),
-                      if (adminId.isNotEmpty) ...[
+                      if (_adminId.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         _InfoCard(
                           title: 'Admin ID',
-                          value: adminId,
+                          value: _adminId,
                           icon: Icons.admin_panel_settings_rounded,
                         ),
                       ],
@@ -354,6 +488,8 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     );
   }
 }
+
+// ─── Reusable info card ────────────────────────────────────────────────────
 
 class _InfoCard extends StatelessWidget {
   final String title;

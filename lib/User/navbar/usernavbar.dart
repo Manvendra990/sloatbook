@@ -17,7 +17,7 @@ class UserNavBar extends StatelessWidget {
     ),
     _NavItem(
       icon: Icons.access_time_rounded,
-      label: 'Slots_selection',
+      label: 'Slots',
       route: '/user/slots_selection',
     ),
     _NavItem(

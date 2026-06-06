@@ -963,3 +963,43 @@ class _LegendDot extends StatelessWidget {
     );
   }
 }
+
+
+
+
+// rules_version = '2';
+// service cloud.firestore {
+//   match /databases/{database}/documents {
+
+//     // Admin collection
+//     match /admin/{uid} {
+//       allow create: if request.auth != null && request.auth.uid == uid;
+//       allow read, update: if request.auth != null && request.auth.uid == uid;
+//     }
+
+//     // Users collection
+//     match /users/{uid} {
+//       allow create: if request.auth != null && request.auth.uid == uid;
+//       allow read, update: if request.auth != null && request.auth.uid == uid;
+//     }
+
+//     // Grounds collection - admin can create/read/update their own grounds
+//     match /grounds/{groundId} {
+//       allow create: if request.auth != null;
+//       allow read: if request.auth != null;
+//       allow update, delete: if request.auth != null 
+//         && resource.data.adminId == request.auth.uid;
+//     }
+
+//     // Bookings/Slots collection - admin can create slots, users can read
+//     match /bookings/{bookingId} {
+//       allow create: if request.auth != null;
+//       allow read: if request.auth != null;
+//       allow update: if request.auth != null 
+//         && (resource.data.adminId == request.auth.uid 
+//         || resource.data.userId == request.auth.uid);
+//       allow delete: if request.auth != null 
+//         && resource.data.adminId == request.auth.uid;
+//     }
+//   }
+// }
