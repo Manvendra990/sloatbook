@@ -8,9 +8,11 @@ import 'package:slotbooking/Admin/ground/my_grounds_screen.dart';
 import 'package:slotbooking/Admin/revenue/revenue_report_screen.dart';
 import 'package:slotbooking/Admin/slots/slot_management_screen.dart';
 import 'package:slotbooking/User/booking/bookinghistory.dart';
+import 'package:slotbooking/User/booking/transaction_history.dart';
 import 'package:slotbooking/User/home/dashboard.dart';
 import 'package:slotbooking/User/home/ground_detail.dart';
 import 'package:slotbooking/User/payments/booking_payment_screen.dart';
+import 'package:slotbooking/User/profile/user_profile.dart';
 import 'package:slotbooking/User/slot_selections/slot.dart';
 import 'package:slotbooking/features/auth/screens/otp_screen.dart';
 import 'package:slotbooking/features/auth/screens/splash_screen.dart';
@@ -20,6 +22,7 @@ import 'package:slotbooking/features/auth/screens/register_screen.dart';
 import 'package:slotbooking/Admin/admin_shell.dart';
 import 'package:slotbooking/Admin/dashboard/admin_dashboard_screen.dart';
 import 'package:slotbooking/features/auth/screens/userlogin_screen.dart';
+import 'package:slotbooking/main.dart';
 
 final GoRouter router = GoRouter(
   initialLocation: '/',
@@ -127,7 +130,7 @@ final GoRouter router = GoRouter(
       },
     ),
 
-     GoRoute(
+    GoRoute(
       path: '/admin/revenue',
       builder: (context, state) {
         return const AdminShell(child: RevenueReportScreen());
@@ -172,6 +175,12 @@ final GoRouter router = GoRouter(
       path: '/user/booking_history',
       builder: (context, state) {
         return BookingHistoryScreen();
+      },
+    ),
+    GoRoute(
+      path: '/user/profile',
+      builder: (context, state) {
+        return UserProfileScreen(themeNotifier: themeNotifier);
       },
     ),
   ],

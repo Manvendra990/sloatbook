@@ -25,6 +25,25 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
     super.dispose();
   }
 
+  // ── FIX 1: handles String, List, or null safely ──────────────────────────
+  List<String> _parseImages(dynamic raw) {
+    if (raw == null) return [];
+    if (raw is String) {
+      // single image stored as plain string
+      final url = raw.trim();
+      return url.isNotEmpty ? [url] : [];
+    }
+    if (raw is List) {
+      // array — filter out empty/null entries
+      return raw
+          .whereType<String>()
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return [];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,7 +64,8 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
           }
 
           final data = snapshot.data!.data()!;
-          final images = List<String>.from(data['images'] ?? []);
+          // FIX 1 applied here
+          final images = _parseImages(data['images']);
           final amenities = List<String>.from(data['amenities'] ?? []);
           final isActive = data['status'] == true;
           final name = data['name'] as String? ?? 'Ground';
@@ -58,7 +78,7 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
 
           return CustomScrollView(
             slivers: [
-              // ── Image Header ──────────────────────────────────────────────
+              // ── Image Header ─────────────────────────────────────────────
               SliverAppBar(
                 expandedHeight: 280,
                 pinned: true,
@@ -121,7 +141,14 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
                                 ),
                               ),
                             )
-                          : Container(color: Colors.grey[300]),
+                          : Container(
+                              color: Colors.grey[300],
+                              child: const Icon(
+                                Icons.image_not_supported_outlined,
+                                color: Colors.grey,
+                                size: 48,
+                              ),
+                            ),
 
                       // Gradient overlay
                       Positioned(
@@ -216,7 +243,7 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
                 ),
               ),
 
-              // ── Content ───────────────────────────────────────────────────
+              // ── Content ──────────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -389,7 +416,7 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
                         const SizedBox(height: 20),
                       ],
 
-                      // Image Gallery strip
+                      // Gallery strip
                       if (images.length > 1) ...[
                         const Text(
                           'Gallery',
@@ -423,6 +450,15 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
                                   width: 90,
                                   height: 90,
                                   fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Container(
+                                    width: 90,
+                                    height: 90,
+                                    color: Colors.grey[300],
+                                    child: const Icon(
+                                      Icons.image_not_supported_outlined,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -459,7 +495,6 @@ class _GroundDetailScreenState extends State<GroundDetailScreen> {
           child: ElevatedButton.icon(
             onPressed: () =>
                 context.push('/user/slot?groundId=${widget.groundId}'),
-
             icon: const Icon(Icons.calendar_month_rounded, size: 20),
             label: const Text(
               'Book a Slot',

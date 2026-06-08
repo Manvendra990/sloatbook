@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:slotbooking/User/booking/transaction_history.dart';
+import 'package:slotbooking/User/navbar/usernavbar.dart';
 
 enum DateFilter { all, today, thisWeek, thisMonth, older }
 
@@ -13,7 +16,9 @@ class BookingHistoryScreen extends StatefulWidget {
 
 class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   DateFilter _activeFilter = DateFilter.all;
-  final _uid = FirebaseAuth.instance.currentUser?.uid;
+
+  // ── FIX 1: Resolve uid lazily so it's never stale ──
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   // ── Light Theme Palette ──────────────────────────────
   static const _pageBg = Color(0xFFF5F6FA);
@@ -54,19 +59,24 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     }
   }
 
-  Query<Map<String, dynamic>> get _query {
+  Query<Map<String, dynamic>>? get _query {
+    // ── FIX 2: Return null if user is not logged in ──
+    final uid = _uid;
+    if (uid == null) return null;
+
     var q = FirebaseFirestore.instance
         .collection('user_bookings')
-        .where('userId', isEqualTo: _uid)
-        .orderBy('createdAt', descending: true);
+        .where('userId', isEqualTo: uid);
     final (from, to) = _dateRange;
-    if (from != null)
+    if (from != null) {
       q = q.where(
         'createdAt',
         isGreaterThanOrEqualTo: Timestamp.fromDate(from),
       );
-    if (to != null)
+    }
+    if (to != null) {
       q = q.where('createdAt', isLessThan: Timestamp.fromDate(to));
+    }
     return q;
   }
 
@@ -135,12 +145,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(),
-            _buildTabs(),
+            // _buildTabs(),
             _buildDateFilterChips(),
             Expanded(child: _buildList()),
           ],
         ),
       ),
+      bottomNavigationBar: const UserNavBar(currentIndex: 1),
     );
   }
 
@@ -149,14 +160,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          _circleBtn(
-            Icons.arrow_back_ios_new,
-            onTap: () => Navigator.pop(context),
-          ),
+          // _circleBtn(Icons.arrow_back_ios_new, onTap: () => context.pop()),
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
-              'My History',
+              'Booking History',
               style: TextStyle(
                 color: _textPrim,
                 fontSize: 20,
@@ -164,58 +172,52 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               ),
             ),
           ),
-          _circleBtn(Icons.tune_rounded, iconColor: _accent),
         ],
       ),
     );
   }
 
-  Widget _circleBtn(
-    IconData icon, {
-    VoidCallback? onTap,
-    Color iconColor = _textPrim,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: const BoxDecoration(
-          color: _surfaceBg,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: iconColor, size: 17),
-      ),
-    );
-  }
+  // Widget _circleBtn(
+  //   IconData icon, {
+  //   VoidCallback? onTap,
+  //   Color iconColor = _textPrim,
+  // }) {
+  //   return GestureDetector(
+  //     onTap: onTap,
+  //     child: Container(
+  //       width: 36,
+  //       height: 36,
+  //       decoration: const BoxDecoration(
+  //         color: _surfaceBg,
+  //         shape: BoxShape.circle,
+  //       ),
+  //       child: Icon(icon, color: iconColor, size: 17),
+  //     ),
+  //   );
+  // }
 
-  Widget _buildTabs() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _surfaceBg,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        padding: const EdgeInsets.all(3),
-        child: Row(
-          children: [
-            _tabItem('Bookings', true),
-            _tabItem(
-              'Transactions',
-              false,
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const TransactionHistoryScreen(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // Widget _buildTabs() {
+  //   return Padding(
+  //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+  //     child: Container(
+  //       decoration: BoxDecoration(
+  //         color: _surfaceBg,
+  //         borderRadius: BorderRadius.circular(14),
+  //       ),
+  //       padding: const EdgeInsets.all(3),
+  //       child: Row(
+  //         children: [
+  //           _tabItem('Bookings', true),
+  //           _tabItem(
+  //             'Transactions',
+  //             false,
+  //             onTap: () => context.push('/user/transaction'),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Widget _tabItem(String label, bool active, {VoidCallback? onTap}) {
     return Expanded(
@@ -287,18 +289,35 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   }
 
   Widget _buildList() {
+    // ── FIX 3: Guard against null uid / null query ──
+    final query = _query;
+    if (query == null) {
+      return _buildEmpty('Please log in to view bookings', Icons.lock_outline);
+    }
+
     return StreamBuilder<QuerySnapshot>(
-      stream: _query.snapshots(),
+      stream: query.snapshots(),
       builder: (context, snap) {
+        // ── FIX 4: Show Firestore errors instead of silent blank screen ──
+        if (snap.hasError) {
+          debugPrint('BookingHistory Firestore error: ${snap.error}');
+          return _buildEmpty(
+            'Error loading bookings.\nCheck Firestore index.',
+            Icons.error_outline,
+          );
+        }
+
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: _accent));
         }
+
         final docs = snap.data?.docs ?? [];
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return _buildEmpty(
             'No bookings found',
             Icons.calendar_today_outlined,
           );
+        }
 
         final groups = _groupByDate(docs);
         final dates = groups.keys.toList()..sort((a, b) => b.compareTo(a));
@@ -387,12 +406,22 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   }
 
   Widget _buildBookingCard(Map<String, dynamic> data) {
-    final status = (data['bookingStatus'] ?? 'pending') as String;
+    final status = (data['bookingStatus'] as String? ?? 'pending');
     final amount = data['amount'] as int? ?? 0;
-    final bookingId = (data['bookingId'] ?? '') as String;
-    final groundName = (data['groundName'] ?? '') as String;
-    final slotLabel = (data['slotLabel'] ?? '') as String;
-    final paymentStatus = (data['paymentStatus'] ?? '') as String;
+    final bookingId = (data['bookingId'] as String? ?? '');
+    final groundName = (data['groundName'] as String? ?? 'Unknown Ground');
+    final slotLabel = (data['slotLabel'] as String? ?? '—');
+
+    // ── FIX 5: Guard empty paymentStatus string before indexing [0] ──
+    final rawPayment = (data['paymentStatus'] as String? ?? '');
+    final paymentLabel = rawPayment.isNotEmpty
+        ? rawPayment[0].toUpperCase() + rawPayment.substring(1)
+        : 'Unknown';
+
+    // ── FIX 6: Guard empty status string before indexing [0] ──
+    final statusLabel = status.isNotEmpty
+        ? status[0].toUpperCase() + status.substring(1)
+        : 'Pending';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 9),
@@ -444,7 +473,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        status[0].toUpperCase() + status.substring(1),
+                        statusLabel,
                         style: TextStyle(
                           color: _badgeTxt(status),
                           fontSize: 11,
@@ -475,8 +504,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      paymentStatus[0].toUpperCase() +
-                          paymentStatus.substring(1),
+                      paymentLabel,
                       style: const TextStyle(color: _textMuted, fontSize: 12),
                     ),
                   ],
@@ -495,14 +523,16 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      '#${bookingId.length > 8 ? bookingId.substring(bookingId.length - 8) : bookingId}',
-                      style: const TextStyle(
-                        color: _textHint,
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
+                    // Text(
+                    //   bookingId.isNotEmpty
+                    //       ? '#${bookingId.length > 8 ? bookingId.substring(bookingId.length - 8) : bookingId}'
+                    //       : '—',
+                    //   style: const TextStyle(
+                    //     color: _textHint,
+                    //     fontSize: 11,
+                    //     fontFamily: 'monospace',
+                    //   ),
+                    // ),
                   ],
                 ),
               ],
@@ -520,7 +550,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         children: [
           Icon(icon, size: 48, color: _textHint),
           const SizedBox(height: 12),
-          Text(msg, style: const TextStyle(color: _textHint, fontSize: 15)),
+          Text(
+            msg,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: _textHint, fontSize: 15),
+          ),
         ],
       ),
     );
@@ -530,8 +564,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 }
 
 // Stub import — replace with actual import path
-class TransactionHistoryScreen extends StatelessWidget {
-  const TransactionHistoryScreen({super.key});
-  @override
-  Widget build(BuildContext context) => const Scaffold();
-}
+// class TransactionHistoryScreen extends StatelessWidget {
+//   const TransactionHistoryScreen({super.key});
+//   @override
+//   Widget build(BuildContext context) => const Scaffold();
+// }

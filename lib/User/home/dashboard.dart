@@ -118,11 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        backgroundColor: _green,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+
       bottomNavigationBar: const UserNavBar(currentIndex: 0),
     );
   }

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:slotbooking/User/booking/bookinghistory.dart';
+import 'package:slotbooking/User/navbar/usernavbar.dart';
 
 enum TxnDateFilter { all, today, thisWeek, thisMonth, older }
 
@@ -14,7 +17,9 @@ class TransactionHistoryScreen extends StatefulWidget {
 
 class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   TxnDateFilter _activeFilter = TxnDateFilter.all;
-  final _uid = FirebaseAuth.instance.currentUser?.uid;
+
+  // FIX 1: lazy getter so uid is never stale
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   // ── Light Theme Palette ──────────────────────────────
   static const _pageBg = Color(0xFFF5F6FA);
@@ -52,11 +57,16 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     }
   }
 
-  Query<Map<String, dynamic>> get _query {
+  // FIX 2: correct collection + null-safe uid
+  Query<Map<String, dynamic>>? get _query {
+    final uid = _uid;
+    if (uid == null) return null;
+
     var q = FirebaseFirestore.instance
-        .collection('user_bookings')
-        .where('userId', isEqualTo: _uid)
-        .orderBy('createdAt', descending: true);
+        .collection('user_transactions') // ← was 'user_bookings'
+        .where('userId', isEqualTo: uid);
+    // .orderBy('createdAt', descending: true);
+
     final (from, to) = _dateRange;
     if (from != null)
       q = q.where(
@@ -68,8 +78,13 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     return q;
   }
 
+  // FIX 3: use transactionType field, not bookingStatus
   bool _isRefund(Map<String, dynamic> d) =>
-      d['bookingStatus'] == 'cancelled' && d['paymentStatus'] == 'refunded';
+      (d['transactionType'] as String? ?? '') == 'refund';
+
+  // FIX 4: success is the paid state in user_transactions
+  bool _isPaid(Map<String, dynamic> d) =>
+      (d['paymentStatus'] as String? ?? '') == 'success' && !_isRefund(d);
 
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
@@ -103,12 +118,13 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(),
-            _buildTabs(),
+
             _buildDateFilterChips(),
             Expanded(child: _buildList()),
           ],
         ),
       ),
+      bottomNavigationBar: const UserNavBar(currentIndex: 2),
     );
   }
 
@@ -117,22 +133,22 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: const BoxDecoration(
-                color: _surfaceBg,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios_new,
-                color: _textPrim,
-                size: 17,
-              ),
-            ),
-          ),
+          // GestureDetector(
+          //   onTap: () => context.pop(),
+          //   child: Container(
+          //     width: 36,
+          //     height: 36,
+          //     decoration: const BoxDecoration(
+          //       color: _surfaceBg,
+          //       shape: BoxShape.circle,
+          //     ),
+          //     child: const Icon(
+          //       Icons.arrow_back_ios_new,
+          //       color: _textPrim,
+          //       size: 17,
+          //     ),
+          //   ),
+          // ),
           const SizedBox(width: 12),
           const Expanded(
             child: Text(
@@ -158,31 +174,28 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     );
   }
 
-  Widget _buildTabs() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _surfaceBg,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        padding: const EdgeInsets.all(3),
-        child: Row(
-          children: [
-            _tabItem(
-              'Bookings',
-              false,
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const BookingHistoryScreen()),
-              ),
-            ),
-            _tabItem('Transactions', true),
-          ],
-        ),
-      ),
-    );
-  }
+  // Widget _buildTabs() {
+  //   return Padding(
+  //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+  //     child: Container(
+  //       decoration: BoxDecoration(
+  //         color: _surfaceBg,
+  //         borderRadius: BorderRadius.circular(14),
+  //       ),
+  //       padding: const EdgeInsets.all(3),
+  //       child: Row(
+  //         children: [
+  //           _tabItem(
+  //             'Bookings',
+  //             false,
+  //             onTap: () => context.push('/user/booking_history'),
+  //           ),
+  //           _tabItem('Transactions', true),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Widget _tabItem(String label, bool active, {VoidCallback? onTap}) {
     return Expanded(
@@ -254,29 +267,49 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   }
 
   Widget _buildList() {
+    final query = _query;
+    if (query == null) {
+      return _buildEmpty(
+        'Please log in to view transactions',
+        Icons.lock_outline,
+      );
+    }
+
     return StreamBuilder<QuerySnapshot>(
-      stream: _query.snapshots(),
+      stream: query.snapshots(),
       builder: (context, snap) {
+        // surface Firestore errors (e.g. missing index)
+        if (snap.hasError) {
+          debugPrint('TransactionHistory Firestore error: ${snap.error}');
+          return _buildEmpty(
+            'Error loading transactions.\nCheck Firestore index.',
+            Icons.error_outline,
+          );
+        }
+
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: _accent));
         }
+
         final docs = snap.data?.docs ?? [];
-        if (docs.isEmpty)
+        if (docs.isEmpty) {
           return _buildEmpty(
             'No transactions found',
             Icons.receipt_long_outlined,
           );
+        }
 
         final groups = _groupByDate(docs);
         final dates = groups.keys.toList()..sort((a, b) => b.compareTo(a));
 
+        // FIX 4: correct summary calculation
         int totalPaid = 0, totalRefund = 0;
         for (final doc in docs) {
           final data = doc.data() as Map<String, dynamic>;
           final amount = data['amount'] as int? ?? 0;
           if (_isRefund(data))
             totalRefund += amount;
-          else if (data['paymentStatus'] == 'paid')
+          else if (_isPaid(data))
             totalPaid += amount;
         }
 
@@ -359,9 +392,9 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
   Widget _buildTxnCard(Map<String, dynamic> data) {
     final isRefund = _isRefund(data);
     final amount = data['amount'] as int? ?? 0;
-    final groundName = (data['groundName'] ?? '') as String;
-    final slotLabel = (data['slotLabel'] ?? '') as String;
-    final paymentId = (data['razorpayPaymentId'] ?? '') as String;
+    final groundName = (data['groundName'] as String? ?? '');
+    final slotLabel = (data['slotLabel'] as String? ?? '');
+    // final paymentId = (data['razorpayPaymentId'] as String? ?? '');
     final createdAt = (data['createdAt'] as Timestamp).toDate();
     final txnLabel = isRefund
         ? 'Refund – Booking cancelled'
@@ -412,18 +445,18 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
                   style: const TextStyle(color: _textMuted, fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (paymentId.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    paymentId,
-                    style: const TextStyle(
-                      color: _textHint,
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                // if (paymentId.isNotEmpty) ...[
+                //   const SizedBox(height: 2),
+                //   Text(
+                //     paymentId,
+                //     style: const TextStyle(
+                //       color: _textHint,
+                //       fontSize: 10,
+                //       fontFamily: 'monospace',
+                //     ),
+                //     overflow: TextOverflow.ellipsis,
+                //   ),
+                // ],
               ],
             ),
           ),
@@ -458,18 +491,15 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
         children: [
           Icon(icon, size: 48, color: _textHint),
           const SizedBox(height: 12),
-          Text(msg, style: const TextStyle(color: _textHint, fontSize: 15)),
+          Text(
+            msg,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: _textHint, fontSize: 15),
+          ),
         ],
       ),
     );
   }
 
   String _fmt(int n) => NumberFormat('#,##,###').format(n);
-}
-
-// Stub — replace with actual import
-class BookingHistoryScreen extends StatelessWidget {
-  const BookingHistoryScreen({super.key});
-  @override
-  Widget build(BuildContext context) => const Scaffold();
 }

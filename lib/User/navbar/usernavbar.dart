@@ -10,25 +10,16 @@ class UserNavBar extends StatelessWidget {
   static const _bg = Color(0xFFF5F7F5);
 
   static const _items = [
-    _NavItem(
-      icon: Icons.grid_view_rounded,
-      label: 'Home',
-      route: '/user/dashboard',
-    ),
-    _NavItem(
-      icon: Icons.access_time_rounded,
-      label: 'Slots',
-      route: '/user/slots_selection',
-    ),
+    _NavItem(icon: Icons.grid_view_rounded, label: 'Home', route: '/user/home'),
     _NavItem(
       icon: Icons.book_online_rounded,
       label: 'Bookings',
-      route: '/user/bookings',
+      route: '/user/booking_history',
     ),
     _NavItem(
-      icon: Icons.attach_money_rounded,
-      label: 'Payments',
-      route: '/user/payments',
+      icon: Icons.access_time_rounded,
+      label: 'Transaction',
+      route: '/user/transaction',
     ),
     _NavItem(
       icon: Icons.person_rounded,
