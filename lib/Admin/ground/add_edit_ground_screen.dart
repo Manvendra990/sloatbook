@@ -111,7 +111,7 @@ class _AddGroundScreenState extends State<AddGroundScreen> {
         'images': 'no_image', // ✅ plain string instead of upload
         'adminId': user.uid,
         'adminName': adminName,
-        'status': false,
+        'status': true,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
