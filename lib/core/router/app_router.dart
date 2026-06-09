@@ -133,7 +133,8 @@ final GoRouter router = GoRouter(
     GoRoute(
       path: '/admin/revenue',
       builder: (context, state) {
-        return const AdminShell(child: RevenueReportScreen());
+        final adminId = FirebaseAuth.instance.currentUser?.uid ?? '';
+        return AdminShell(child: AdminRevenueScreen(adminId: adminId));
       },
     ),
 
@@ -180,7 +181,7 @@ final GoRouter router = GoRouter(
     GoRoute(
       path: '/user/profile',
       builder: (context, state) {
-        return UserProfileScreen(themeNotifier: themeNotifier);
+        return UserProfileScreen();
       },
     ),
   ],
