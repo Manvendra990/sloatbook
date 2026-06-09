@@ -6,20 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:slotbooking/User/navbar/usernavbar.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  UserProfileScreen
-//
-//  Pass a [themeNotifier] (ValueNotifier<ThemeMode>) from your MaterialApp so
-//  the dark/light toggle updates the whole app instantly.
-//
-//  Usage:
-//    UserProfileScreen(themeNotifier: myThemeNotifier)
-// ─────────────────────────────────────────────────────────────────────────────
-
 class UserProfileScreen extends StatefulWidget {
-  final ValueNotifier<ThemeMode> themeNotifier;
-
-  const UserProfileScreen({super.key, required this.themeNotifier});
+  const UserProfileScreen({super.key});
 
   @override
   State<UserProfileScreen> createState() => _ProfileScreenState();
@@ -55,9 +43,7 @@ class _ProfileScreenState extends State<UserProfileScreen>
   }
 
   User? get _user => _auth.currentUser;
-  bool get _isDark => widget.themeNotifier.value == ThemeMode.dark;
 
-  // ─── Colors scoped to current theme ────────────────────────────────────────
   Color _bg(BuildContext ctx) => Theme.of(ctx).scaffoldBackgroundColor;
   Color _card(BuildContext ctx) => Theme.of(ctx).cardColor;
   Color _text(BuildContext ctx) => Theme.of(ctx).colorScheme.onSurface;
@@ -65,14 +51,10 @@ class _ProfileScreenState extends State<UserProfileScreen>
       Theme.of(ctx).colorScheme.onSurface.withOpacity(0.55);
 
   static const _green = Color(0xFF0D5C3A);
-  static const _greenLight = Color(0xFF1A8A57);
-  static const _greenSoft = Color(0xFFE8F5EE);
 
-  // ─── Firestore user doc ─────────────────────────────────────────────────────
   Stream<DocumentSnapshot<Map<String, dynamic>>> get _userStream =>
       _firestore.collection('users').doc(_user?.uid).snapshots();
 
-  // ─── Pick & upload avatar ───────────────────────────────────────────────────
   Future<void> _pickAndUploadPhoto() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -102,7 +84,6 @@ class _ProfileScreenState extends State<UserProfileScreen>
     }
   }
 
-  // ─── Sign out ────────────────────────────────────────────────────────────────
   Future<void> _signOut() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -139,7 +120,6 @@ class _ProfileScreenState extends State<UserProfileScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // ─── Stats from Firestore ───────────────────────────────────────────────────
   Future<Map<String, int>> _fetchStats() async {
     final uid = _user?.uid;
     if (uid == null) return {'bookings': 0, 'spent': 0, 'grounds': 0};
@@ -169,202 +149,160 @@ class _ProfileScreenState extends State<UserProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = _isDark;
+    return Scaffold(
+      backgroundColor: _bg(context),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: _userStream,
+        builder: (context, snapshot) {
+          final userData = snapshot.data?.data() ?? {};
+          final displayName =
+              _user?.displayName ?? userData['name'] as String? ?? 'Player';
+          final phone =
+              _user?.phoneNumber ??
+              userData['phone'] as String? ??
+              userData['userPhone'] as String? ??
+              'No phone';
+          final email = _user?.email ?? userData['email'] as String? ?? '';
+          final photoUrl = _user?.photoURL ?? userData['photoUrl'] as String?;
 
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: widget.themeNotifier,
-      builder: (context, mode, _) {
-        return Scaffold(
-          backgroundColor: _bg(context),
-          body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: _userStream,
-            builder: (context, snapshot) {
-              final userData = snapshot.data?.data() ?? {};
-              final displayName =
-                  _user?.displayName ?? userData['name'] as String? ?? 'Player';
-              final phone =
-                  _user?.phoneNumber ??
-                  userData['phone'] as String? ??
-                  userData['userPhone'] as String? ??
-                  'No phone';
-              final email = _user?.email ?? userData['email'] as String? ?? '';
-              final photoUrl =
-                  _user?.photoURL ?? userData['photoUrl'] as String?;
+          return CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 280,
+                pinned: true,
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                flexibleSpace: FlexibleSpaceBar(
+                  background: _ProfileHeader(
+                    displayName: displayName,
+                    phone: phone,
+                    email: email,
+                    photoUrl: photoUrl,
+                    avatarScale: _avatarScale,
+                    isUploading: _isUploadingPhoto,
+                    onTapPhoto: _pickAndUploadPhoto,
+                  ),
+                ),
+              ),
 
-              return CustomScrollView(
-                slivers: [
-                  // ── Sliver AppBar with hero header ─────────────────────
-                  SliverAppBar(
-                    expandedHeight: 280,
-                    pinned: true,
-                    backgroundColor: _green,
-                    foregroundColor: Colors.white,
-                    flexibleSpace: FlexibleSpaceBar(
-                      background: _ProfileHeader(
-                        displayName: displayName,
-                        phone: phone,
-                        email: email,
-                        photoUrl: photoUrl,
-                        avatarScale: _avatarScale,
-                        isUploading: _isUploadingPhoto,
-                        onTapPhoto: _pickAndUploadPhoto,
-                        isDark: mode == ThemeMode.dark,
-                        onToggleTheme: () {
-                          widget.themeNotifier.value = mode == ThemeMode.dark
-                              ? ThemeMode.light
-                              : ThemeMode.dark;
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Stats
+                      FutureBuilder<Map<String, int>>(
+                        future: _fetchStats(),
+                        builder: (context, snap) {
+                          final stats =
+                              snap.data ??
+                              {'bookings': 0, 'spent': 0, 'grounds': 0};
+                          return _StatsRow(
+                            stats: stats,
+                            cardColor: _card(context),
+                          );
                         },
                       ),
-                    ),
-                  ),
 
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // ── Stats row ─────────────────────────────────
-                          FutureBuilder<Map<String, int>>(
-                            future: _fetchStats(),
-                            builder: (context, snap) {
-                              final stats =
-                                  snap.data ??
-                                  {'bookings': 0, 'spent': 0, 'grounds': 0};
-                              return _StatsRow(
-                                stats: stats,
-                                cardColor: _card(context),
-                              );
-                            },
+                      const SizedBox(height: 24),
+
+                      // Account
+                      _SectionLabel(label: 'Account', subColor: _sub(context)),
+                      const SizedBox(height: 10),
+                      _MenuCard(
+                        cardColor: _card(context),
+                        items: [
+                          _MenuItem(
+                            icon: Icons.person_outline_rounded,
+                            label: 'Full Name',
+                            trailing: displayName,
+                            trailingColor: _sub(context),
                           ),
-
-                          const SizedBox(height: 24),
-
-                          // ── Account section ───────────────────────────
-                          _SectionLabel(
-                            label: 'Account',
-                            subColor: _sub(context),
+                          _MenuItem(
+                            icon: Icons.phone_outlined,
+                            label: 'Phone',
+                            trailing: phone,
+                            trailingColor: _sub(context),
                           ),
-                          const SizedBox(height: 10),
-                          _MenuCard(
-                            cardColor: _card(context),
-                            items: [
-                              _MenuItem(
-                                icon: Icons.person_outline_rounded,
-                                label: 'Full Name',
-                                trailing: displayName,
-                                trailingColor: _sub(context),
-                              ),
-                              _MenuItem(
-                                icon: Icons.phone_outlined,
-                                label: 'Phone',
-                                trailing: phone,
-                                trailingColor: _sub(context),
-                              ),
-                              if (email.isNotEmpty)
-                                _MenuItem(
-                                  icon: Icons.mail_outline_rounded,
-                                  label: 'Email',
-                                  trailing: email,
-                                  trailingColor: _sub(context),
-                                ),
-                            ],
-                            textColor: _text(context),
-                          ),
-
-                          const SizedBox(height: 20),
-
-                          // ── Preferences section ───────────────────────
-                          _SectionLabel(
-                            label: 'Preferences',
-                            subColor: _sub(context),
-                          ),
-                          const SizedBox(height: 10),
-                          _ThemeToggleCard(
-                            isDark: mode == ThemeMode.dark,
-                            cardColor: _card(context),
-                            textColor: _text(context),
-                            subColor: _sub(context),
-                            onToggle: (val) {
-                              widget.themeNotifier.value = val
-                                  ? ThemeMode.dark
-                                  : ThemeMode.light;
-                            },
-                          ),
-
-                          const SizedBox(height: 20),
-
-                          // ── More section ──────────────────────────────
-                          _SectionLabel(label: 'More', subColor: _sub(context)),
-                          const SizedBox(height: 10),
-                          _MenuCard(
-                            cardColor: _card(context),
-                            items: [
-                              _MenuItem(
-                                icon: Icons.history_rounded,
-                                label: 'Booking History',
-                                showArrow: true,
-                                onTap: () {},
-                              ),
-                              _MenuItem(
-                                icon: Icons.receipt_long_rounded,
-                                label: 'Transactions',
-                                showArrow: true,
-                                onTap: () {},
-                              ),
-                              _MenuItem(
-                                icon: Icons.help_outline_rounded,
-                                label: 'Help & Support',
-                                showArrow: true,
-                                onTap: () {},
-                              ),
-                              _MenuItem(
-                                icon: Icons.info_outline_rounded,
-                                label: 'About App',
-                                showArrow: true,
-                                onTap: () {},
-                              ),
-                            ],
-                            textColor: _text(context),
-                          ),
-
-                          const SizedBox(height: 20),
-
-                          // ── Logout button ─────────────────────────────
-                          _LogoutButton(onTap: _signOut),
-
-                          const SizedBox(height: 32),
-
-                          // ── Version tag ───────────────────────────────
-                          Center(
-                            child: Text(
-                              'Ground Booking • v1.0.0',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _sub(context),
-                                letterSpacing: 0.5,
-                              ),
+                          if (email.isNotEmpty)
+                            _MenuItem(
+                              icon: Icons.mail_outline_rounded,
+                              label: 'Email',
+                              trailing: email,
+                              trailingColor: _sub(context),
                             ),
-                          ),
-                          const SizedBox(height: 16),
                         ],
+                        textColor: _text(context),
                       ),
-                    ),
+
+                      const SizedBox(height: 20),
+
+                      // More
+                      _SectionLabel(label: 'More', subColor: _sub(context)),
+                      const SizedBox(height: 10),
+                      _MenuCard(
+                        cardColor: _card(context),
+                        items: [
+                          _MenuItem(
+                            icon: Icons.history_rounded,
+                            label: 'Booking History',
+                            showArrow: true,
+                            onTap: () {},
+                          ),
+                          _MenuItem(
+                            icon: Icons.receipt_long_rounded,
+                            label: 'Transactions',
+                            showArrow: true,
+                            onTap: () {},
+                          ),
+                          _MenuItem(
+                            icon: Icons.help_outline_rounded,
+                            label: 'Help & Support',
+                            showArrow: true,
+                            onTap: () {},
+                          ),
+                          _MenuItem(
+                            icon: Icons.info_outline_rounded,
+                            label: 'About App',
+                            showArrow: true,
+                            onTap: () {},
+                          ),
+                        ],
+                        textColor: _text(context),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      _LogoutButton(onTap: _signOut),
+
+                      const SizedBox(height: 32),
+
+                      Center(
+                        child: Text(
+                          'Ground Booking • v1.0.0',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _sub(context),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                   ),
-                ],
-              );
-            },
-          ),
-          bottomNavigationBar: const UserNavBar(currentIndex: 3),
-        );
-      },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+      bottomNavigationBar: const UserNavBar(currentIndex: 3),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Profile Header (inside SliverAppBar)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Profile Header ───────────────────────────────────────────────────────────
 
 class _ProfileHeader extends StatelessWidget {
   final String displayName;
@@ -373,9 +311,7 @@ class _ProfileHeader extends StatelessWidget {
   final String? photoUrl;
   final Animation<double> avatarScale;
   final bool isUploading;
-  final bool isDark;
   final VoidCallback onTapPhoto;
-  final VoidCallback onToggleTheme;
 
   const _ProfileHeader({
     required this.displayName,
@@ -384,9 +320,7 @@ class _ProfileHeader extends StatelessWidget {
     required this.photoUrl,
     required this.avatarScale,
     required this.isUploading,
-    required this.isDark,
     required this.onTapPhoto,
-    required this.onToggleTheme,
   });
 
   @override
@@ -401,7 +335,6 @@ class _ProfileHeader extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Decorative circles
           Positioned(
             top: -40,
             right: -40,
@@ -426,61 +359,6 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
           ),
-
-          // Theme toggle top-right
-          Positioned(
-            top: 52,
-            right: 16,
-            child: GestureDetector(
-              onTap: onToggleTheme,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: 56,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.25)
-                      : Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.4),
-                    width: 1.5,
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    AnimatedAlign(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      alignment: isDark
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        margin: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          isDark
-                              ? Icons.dark_mode_rounded
-                              : Icons.light_mode_rounded,
-                          size: 13,
-                          color: isDark
-                              ? const Color(0xFF0D5C3A)
-                              : const Color(0xFFFF9800),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Main content
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(0, 16, 0, 20),
@@ -488,7 +366,6 @@ class _ProfileHeader extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(height: 8),
-                  // Avatar
                   ScaleTransition(
                     scale: avatarScale,
                     child: GestureDetector(
@@ -496,7 +373,6 @@ class _ProfileHeader extends StatelessWidget {
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          // Glow ring
                           Container(
                             width: 102,
                             height: 102,
@@ -539,7 +415,6 @@ class _ProfileHeader extends StatelessWidget {
                               color: Colors.white,
                               strokeWidth: 2,
                             ),
-                          // Camera badge
                           Positioned(
                             bottom: 2,
                             right: 2,
@@ -567,7 +442,6 @@ class _ProfileHeader extends StatelessWidget {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 14),
                   Text(
                     displayName,
@@ -606,9 +480,7 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Stats Row
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Stats Row ────────────────────────────────────────────────────────────────
 
 class _StatsRow extends StatelessWidget {
   final Map<String, int> stats;
@@ -707,9 +579,7 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Section Label
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Section Label ────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String label;
@@ -734,9 +604,7 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Menu Card
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Menu Card ────────────────────────────────────────────────────────────────
 
 class _MenuCard extends StatelessWidget {
   final List<_MenuItem> items;
@@ -837,24 +705,24 @@ class _MenuItemTile extends StatelessWidget {
                 ),
               ),
             ),
-            // if (item.trailing != null)
-            //   Flexible(
-            //     child: Text(
-            //       item.trailing!,
-            //       style: TextStyle(
-            //         fontSize: 13,
-            //         color: item.trailingColor ?? textColor,
-            //       ),
-            //       overflow: TextOverflow.ellipsis,
-            //       textAlign: TextAlign.right,
-            //     ),
-            //   ),
-            // if (item.showArrow)
-            //   Icon(
-            //     Icons.chevron_right_rounded,
-            //     size: 20,
-            //     color: textColor.withOpacity(0.4),
-            //   ),
+            if (item.trailing != null)
+              Flexible(
+                child: Text(
+                  item.trailing!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: item.trailingColor ?? textColor,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            if (item.showArrow)
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: textColor.withOpacity(0.4),
+              ),
           ],
         ),
       ),
@@ -862,134 +730,7 @@ class _MenuItemTile extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Theme Toggle Card
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ThemeToggleCard extends StatelessWidget {
-  final bool isDark;
-  final Color cardColor;
-  final Color textColor;
-  final Color subColor;
-  final ValueChanged<bool> onToggle;
-
-  const _ThemeToggleCard({
-    required this.isDark,
-    required this.cardColor,
-    required this.textColor,
-    required this.subColor,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Light mode button
-          Expanded(
-            child: GestureDetector(
-              onTap: () => onToggle(false),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: !isDark
-                      ? const Color(0xFFFF9800).withOpacity(0.15)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  border: !isDark
-                      ? Border.all(
-                          color: const Color(0xFFFF9800).withOpacity(0.4),
-                        )
-                      : null,
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.light_mode_rounded,
-                      color: !isDark ? const Color(0xFFFF9800) : subColor,
-                      size: 22,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Light',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: !isDark ? const Color(0xFFFF9800) : subColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 8),
-
-          // Dark mode button
-          Expanded(
-            child: GestureDetector(
-              onTap: () => onToggle(true),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF3D5AFE).withOpacity(0.15)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  border: isDark
-                      ? Border.all(
-                          color: const Color(0xFF3D5AFE).withOpacity(0.4),
-                        )
-                      : null,
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.dark_mode_rounded,
-                      color: isDark ? const Color(0xFF3D5AFE) : subColor,
-                      size: 22,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Dark',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? const Color(0xFF3D5AFE) : subColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Logout Button
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Logout Button ────────────────────────────────────────────────────────────
 
 class _LogoutButton extends StatelessWidget {
   final VoidCallback onTap;
