@@ -160,7 +160,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             icon: Icons.add_circle_outline_rounded,
                             backgroundColor: _green,
                             textColor: Colors.white,
-                            onTap: () => context.go('/admin/addgrounds'),
+                            onTap: () => context.push('/admin/addgrounds'),
                           ),
                         ),
                         const SizedBox(width: 12),

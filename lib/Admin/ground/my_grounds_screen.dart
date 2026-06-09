@@ -106,7 +106,7 @@ class _AdminGroundsScreenState extends State<AdminGroundsScreen> {
 
                   // Add New Ground button
                   GestureDetector(
-                    onTap: () => context.go('/admin/addgrounds'),
+                    onTap: () => context.push('/admin/addgrounds'),
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -207,7 +207,7 @@ class _AdminGroundsScreenState extends State<AdminGroundsScreen> {
                           onDelete: () =>
                               _deleteGround(doc.id, data['name'] ?? 'Ground'),
                           onEdit: () =>
-                              context.go('/admin/editground/${doc.id}'),
+                              context.push('/admin/editground/${doc.id}'),
                         ),
                       );
                     },

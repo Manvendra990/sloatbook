@@ -322,8 +322,17 @@ class _AddGroundScreenState extends State<AddGroundScreen> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              image: DecorationImage(
+                                image: AssetImage(
+                                  "assets/images/bg_map.png",
+                                ),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            width: double.infinity,
                             height: 140,
-                            color: Colors.grey[200],
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
