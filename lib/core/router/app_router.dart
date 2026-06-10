@@ -1,12 +1,7 @@
 // import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
-import 'package:slotbooking/Admin/bookings/admin_booking_screen.dart';
-import 'package:slotbooking/Admin/bookings/admin_edit_booking_screen.dart';
-import 'package:slotbooking/Admin/ground/add_edit_ground_screen.dart';
-import 'package:slotbooking/Admin/ground/my_grounds_screen.dart';
-import 'package:slotbooking/Admin/revenue/revenue_report_screen.dart';
-import 'package:slotbooking/Admin/slots/slot_management_screen.dart';
+
 import 'package:slotbooking/User/booking/bookinghistory.dart';
 import 'package:slotbooking/User/booking/transaction_history.dart';
 import 'package:slotbooking/User/home/dashboard.dart';
@@ -16,11 +11,6 @@ import 'package:slotbooking/User/profile/user_profile.dart';
 import 'package:slotbooking/User/slot_selections/slot.dart';
 import 'package:slotbooking/features/auth/screens/otp_screen.dart';
 import 'package:slotbooking/features/auth/screens/splash_screen.dart';
-import 'package:slotbooking/features/auth/screens/roal_selection_screen.dart';
-import 'package:slotbooking/features/auth/screens/login_screen.dart';
-import 'package:slotbooking/features/auth/screens/register_screen.dart';
-import 'package:slotbooking/Admin/admin_shell.dart';
-import 'package:slotbooking/Admin/dashboard/admin_dashboard_screen.dart';
 import 'package:slotbooking/features/auth/screens/userlogin_screen.dart';
 import 'package:slotbooking/main.dart';
 
@@ -53,19 +43,6 @@ final GoRouter router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
 
-    GoRoute(
-      path: '/role-selection',
-      builder: (context, state) => const RoleSelectionScreen(),
-    ),
-
-    GoRoute(
-      path: '/admin/login',
-      builder: (context, state) {
-        final role = state.uri.queryParameters['role'] ?? 'admin';
-        return AdminLoginScreen(role: role);
-      },
-    ),
-
     // ── User login (phone OTP) ───────────────────────────────────────────────
     GoRoute(path: '/user/login', builder: (_, __) => const UserLoginScreen()),
 
@@ -77,64 +54,6 @@ final GoRouter router = GoRouter(
           state.uri.queryParameters['phone'] ?? '',
         );
         return OtpScreen(phoneNumber: phone);
-      },
-    ),
-
-    // GoRoute(
-    //   path: '/master/login',
-    //   builder: (context, state) {
-    //     final role = state.uri.queryParameters['role'] ?? 'master';
-
-    //     return AdminLoginScreen(role: role);
-    //     // Later replace with:
-    //     // return MasterLoginScreen(role: role);
-    //   },
-    // ),
-    GoRoute(
-      path: '/admin/register',
-      builder: (context, state) {
-        final role = state.uri.queryParameters['role'] ?? 'admin';
-        return AdminRegisterScreen();
-      },
-    ),
-
-    GoRoute(
-      path: '/admin/dashboard',
-      builder: (context, state) {
-        return const AdminShell(child: AdminDashboardScreen());
-      },
-    ),
-
-    GoRoute(
-      path: '/admin/slotmanagement',
-      builder: (context, state) {
-        return const AdminShell(child: AddSlotScreen());
-      },
-    ),
-    GoRoute(
-      path: '/admin/slot',
-      builder: (context, state) {
-        return const AdminShell(child: AdminBookingsScreen());
-      },
-    ),
-    GoRoute(
-      path: '/admin/addgrounds',
-      builder: (context, state) {
-        return const AdminShell(child: AddGroundScreen());
-      },
-    ),
-    GoRoute(
-      path: '/admin/grounds',
-      builder: (context, state) {
-        return const AdminShell(child: AdminGroundsScreen());
-      },
-    ),
-
-    GoRoute(
-      path: '/admin/revenue',
-      builder: (context, state) {
-        final adminId = FirebaseAuth.instance.currentUser?.uid ?? '';
-        return AdminShell(child: AdminRevenueScreen(adminId: adminId));
       },
     ),
 
