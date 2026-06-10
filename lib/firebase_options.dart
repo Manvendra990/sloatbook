@@ -57,7 +57,6 @@ class DefaultFirebaseOptions {
     projectId: 'gamebooking-d0fe5',
     storageBucket: 'gamebooking-d0fe5.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDsZW7yDMG3KUSnbNSGHj_-noC1JTMzv5k',
     appId: '1:999894490491:ios:ad52e17f9c56fbe9aeb1de',
@@ -66,7 +65,6 @@ class DefaultFirebaseOptions {
     storageBucket: 'gamebooking-d0fe5.firebasestorage.app',
     iosBundleId: 'com.example.slotbooking',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyDsZW7yDMG3KUSnbNSGHj_-noC1JTMzv5k',
     appId: '1:999894490491:ios:ad52e17f9c56fbe9aeb1de',

@@ -97,8 +97,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
           _error = _friendlyError(e.code);
         });
       },
-
       codeSent: (String verificationId, int? resendToken) {
+        if (!mounted) return;
         setState(() {
           _verificationId = verificationId;
           _isSending = false;
