@@ -5,6 +5,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:slotbooking/User/navbar/usernavbar.dart';
+import 'package:slotbooking/shared/widgets/carosol.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,20 +15,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // ── Theme tokens ────────────────────────────────────────────────────────────
   static const _red = Color(0xFFD0021B);
-  static const _redDark = Color(0xFF9B001A);
   static const _bg = Color(0xFFF6F6F6);
-  static const _white = Colors.white;
-  static const _textDark = Color(0xFF111111);
-  static const _textMid = Color(0xFF555555);
 
-  // ── State ───────────────────────────────────────────────────────────────────
   String _selectedSport = 'All';
   String? _detectedCity;
   bool _locationLoading = true;
   String _searchQuery = '';
   final TextEditingController _searchCtrl = TextEditingController();
+
+  // Banner carousel
+  final PageController _bannerCtrl = PageController();
+  int _bannerPage = 0;
 
   static const _sports = [
     {'label': 'All', 'icon': Icons.sports},
@@ -37,6 +36,27 @@ class _HomeScreenState extends State<HomeScreen> {
     {'label': 'Swimming', 'icon': Icons.pool},
     {'label': 'Badminton', 'icon': Icons.sports_kabaddi},
     {'label': 'Basketball', 'icon': Icons.sports_basketball},
+  ];
+
+  static const _banners = [
+    {
+      'tag': 'LIMITED OFFER',
+      'title': '30% off your\nfirst booking',
+      'sub': 'On selected grounds this week',
+      'color': Color(0xFF9B001A),
+    },
+    {
+      'tag': 'NEW',
+      'title': 'Premium slots\nnow available',
+      'sub': 'Book floodlit evening slots',
+      'color': Color(0xFF0D5C3A),
+    },
+    {
+      'tag': 'HOT',
+      'title': 'Weekend\nspecial deals',
+      'sub': 'Save up to ₹500 on weekends',
+      'color': Color(0xFF1A237E),
+    },
   ];
 
   @override
@@ -51,10 +71,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _bannerCtrl.dispose();
     super.dispose();
   }
 
-  // ── Location ─────────────────────────────────────────────────────────────────
   Future<void> _detectLocation() async {
     setState(() => _locationLoading = true);
     try {
@@ -91,7 +111,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ── Firestore query ──────────────────────────────────────────────────────────
   Query<Map<String, dynamic>> _buildQuery() {
     Query<Map<String, dynamic>> q = FirebaseFirestore.instance.collection(
       'grounds',
@@ -102,7 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return q;
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,366 +128,332 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _Header(
-              city: _detectedCity,
-              locationLoading: _locationLoading,
-              onRefresh: _detectLocation,
-            ),
-            _SearchBar(controller: _searchCtrl),
-            _SportSelector(
-              sports: _sports,
-              selected: _selectedSport,
-              onSelect: (s) => setState(() => _selectedSport = s),
-            ),
-            Expanded(
-              child: _GroundsList(
-                query: _buildQuery(),
-                searchQuery: _searchQuery,
+            // ── Fixed top section ──────────────────────────────────────────
+            Container(
+              color: Colors.white,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildHeader(),
+                  _buildSearchBar(),
+                  _buildSportSelector(),
+                  const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                ],
               ),
             ),
+            // ── Scrollable content ─────────────────────────────────────────
+            Expanded(child: _buildScrollableBody()),
           ],
         ),
       ),
       bottomNavigationBar: const UserNavBar(currentIndex: 0),
     );
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Header
-// ─────────────────────────────────────────────────────────────────────────────
-class _Header extends StatelessWidget {
-  final String? city;
-  final bool locationLoading;
-  final VoidCallback onRefresh;
-
-  static const _red = Color(0xFFD0021B);
-  static const _white = Colors.white;
-
-  const _Header({
-    required this.city,
-    required this.locationLoading,
-    required this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: _white,
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  // ── Header ──────────────────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+      child: Row(
         children: [
-          // Top row: location  +  bell
-          Row(
-            children: [
-              GestureDetector(
-                onTap: onRefresh,
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.location_on_rounded,
-                      size: 18,
-                      color: _red,
-                    ),
-                    const SizedBox(width: 4),
-                    locationLoading
-                        ? const SizedBox(
-                            width: 13,
-                            height: 13,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _red,
-                            ),
-                          )
-                        : Text(
-                            city != null ? '$city, IN' : 'Location off',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF111111),
-                            ),
-                          ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 18,
-                      color: Color(0xFF111111),
-                    ),
-                  ],
+          // Location
+          GestureDetector(
+            onTap: _detectLocation,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.location_on_rounded,
+                  size: 17,
+                  color: Color(0xFFD0021B),
                 ),
-              ),
-              const Spacer(),
-              Stack(
-                children: [
-                  const Icon(
-                    Icons.notifications_outlined,
-                    size: 26,
-                    color: Color(0xFF333333),
-                  ),
-                  Positioned(
-                    top: 2,
-                    right: 2,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: _red,
-                        shape: BoxShape.circle,
+                const SizedBox(width: 4),
+                _locationLoading
+                    ? const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFD0021B),
+                        ),
+                      )
+                    : Text(
+                        _detectedCity != null
+                            ? '$_detectedCity, IN'
+                            : 'Location off',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF111111),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Greeting
-          const Text(
-            'Hello, Player! 👋',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF111111),
-              letterSpacing: -0.3,
+                const SizedBox(width: 3),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: Color(0xFF111111),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 2),
-          const Text(
-            'Ready to play today?',
-            style: TextStyle(fontSize: 14, color: Color(0xFF777777)),
+          const Spacer(),
+          // Bell
+          Stack(
+            children: [
+              const Icon(
+                Icons.notifications_outlined,
+                size: 25,
+                color: Color(0xFF333333),
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFD0021B),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Search bar
-// ─────────────────────────────────────────────────────────────────────────────
-class _SearchBar extends StatelessWidget {
-  final TextEditingController controller;
-  static const _red = Color(0xFFD0021B);
-
-  const _SearchBar({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+  // ── Search bar ───────────────────────────────────────────────────────────────
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: Row(
         children: [
           Expanded(
             child: Container(
-              height: 46,
+              height: 44,
               decoration: BoxDecoration(
                 color: const Color(0xFFF2F2F2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: TextField(
-                controller: controller,
+                controller: _searchCtrl,
                 style: const TextStyle(fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: 'Search venues, sports, or areas...',
+                  hintText: 'Search venues, sports, areas...',
                   hintStyle: TextStyle(fontSize: 13, color: Colors.grey[400]),
                   prefixIcon: Icon(
                     Icons.search,
-                    size: 20,
+                    size: 19,
                     color: Colors.grey[400],
                   ),
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
           ),
           const SizedBox(width: 10),
           Container(
-            width: 46,
-            height: 46,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              color: _red,
+              color: const Color(0xFFD0021B),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(
               Icons.tune_rounded,
               color: Colors.white,
-              size: 22,
+              size: 20,
             ),
           ),
         ],
       ),
     );
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Horizontal sport selector (icon circles)
-// ─────────────────────────────────────────────────────────────────────────────
-class _SportSelector extends StatelessWidget {
-  final List<Map<String, dynamic>> sports;
-  final String selected;
-  final ValueChanged<String> onSelect;
-
-  static const _red = Color(0xFFD0021B);
-
-  const _SportSelector({
-    required this.sports,
-    required this.selected,
-    required this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: Column(
-        children: [
-          const Divider(height: 1, color: Color(0xFFEEEEEE)),
-          SizedBox(
-            height: 88,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              itemCount: sports.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 18),
-              itemBuilder: (context, i) {
-                final s = sports[i];
-                final label = s['label'] as String;
-                final icon = s['icon'] as IconData;
-                final isSelected = selected == label;
-                return GestureDetector(
-                  onTap: () => onSelect(label),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isSelected ? _red : const Color(0xFFF2F2F2),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: _red.withOpacity(0.35),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ]
-                              : [],
-                        ),
-                        child: Icon(
-                          icon,
-                          size: 22,
-                          color: isSelected ? Colors.white : Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: isSelected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          color: isSelected ? _red : Colors.grey[600],
-                        ),
-                      ),
-                    ],
+  // ── Sport selector ───────────────────────────────────────────────────────────
+  // FIX: use compact icon-only circles with label below, proper height
+  Widget _buildSportSelector() {
+    return SizedBox(
+      height: 82,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: _sports.length,
+        itemBuilder: (context, i) {
+          final s = _sports[i];
+          final label = s['label'] as String;
+          final icon = s['icon'] as IconData;
+          final isSelected = _selectedSport == label;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedSport = label),
+            child: Container(
+              margin: const EdgeInsets.only(right: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected
+                          ? const Color(0xFFD0021B)
+                          : const Color(0xFFF2F2F2),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: const Color(0xFFD0021B).withOpacity(0.3),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : [],
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 20,
+                      color: isSelected ? Colors.white : Colors.grey[600],
+                    ),
                   ),
-                );
-              },
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: isSelected
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                      color: isSelected
+                          ? const Color(0xFFD0021B)
+                          : Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Divider(height: 1, color: Color(0xFFEEEEEE)),
-        ],
+          );
+        },
       ),
     );
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Grounds list (StreamBuilder)
-// ─────────────────────────────────────────────────────────────────────────────
-class _GroundsList extends StatelessWidget {
-  final Query<Map<String, dynamic>> query;
-  final String searchQuery;
-
-  static const _red = Color(0xFFD0021B);
-
-  const _GroundsList({required this.query, required this.searchQuery});
-
-  @override
-  Widget build(BuildContext context) {
+  // ── Scrollable body (banner + grounds list) ──────────────────────────────────
+  Widget _buildScrollableBody() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: query.snapshots(),
+      stream: _buildQuery().snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: _red));
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
         var docs = snapshot.data?.docs ?? [];
 
-        // Client-side text search
-        if (searchQuery.isNotEmpty) {
+        if (_searchQuery.isNotEmpty) {
           docs = docs.where((d) {
             final data = d.data();
             final name = (data['name'] as String? ?? '').toLowerCase();
             final address = (data['address'] as String? ?? '').toLowerCase();
             final city = (data['city'] as String? ?? '').toLowerCase();
             final sport = (data['sportType'] as String? ?? '').toLowerCase();
-            return name.contains(searchQuery) ||
-                address.contains(searchQuery) ||
-                city.contains(searchQuery) ||
-                sport.contains(searchQuery);
+            return name.contains(_searchQuery) ||
+                address.contains(_searchQuery) ||
+                city.contains(_searchQuery) ||
+                sport.contains(_searchQuery);
           }).toList();
         }
 
-        if (docs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.search_off_rounded,
-                  size: 56,
-                  color: Colors.grey[300],
+        return CustomScrollView(
+          slivers: [
+            // ── Banner carousel ──────────────────────────────────────────
+            SliverToBoxAdapter(child: BannerCarousel()),
+
+            // ── Section header ───────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Nearby Grounds',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF111111),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFD0021B),
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'No grounds found',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey[400],
-                    fontWeight: FontWeight.w500,
+              ),
+            ),
+
+            // ── Grounds ──────────────────────────────────────────────────
+            if (snapshot.hasError)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Text('Error: ${snapshot.error}'),
                   ),
                 ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-          itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 16),
-          itemBuilder: (context, i) {
-            final data = docs[i].data();
-            final groundId = docs[i].id;
-            return _GroundCard(
-              groundId: groundId,
-              data: data,
-              onTap: () =>
-                  context.push('/user/ground_details?groundId=$groundId'),
-            );
-          },
+              )
+            else if (docs.isEmpty &&
+                snapshot.connectionState != ConnectionState.waiting)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 60),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.search_off_rounded,
+                          size: 56,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No grounds found',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[400],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate((context, i) {
+                    final data = docs[i].data();
+                    final groundId = docs[i].id;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _GroundCard(
+                        groundId: groundId,
+                        data: data,
+                        onTap: () => context.push(
+                          '/user/ground_details?groundId=$groundId',
+                        ),
+                      ),
+                    );
+                  }, childCount: docs.length),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -477,7 +461,7 @@ class _GroundsList extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ground card  (red-accented, reference-style)
+// Ground Card
 // ─────────────────────────────────────────────────────────────────────────────
 class _GroundCard extends StatelessWidget {
   final String groundId;
@@ -485,7 +469,6 @@ class _GroundCard extends StatelessWidget {
   final VoidCallback onTap;
 
   static const _red = Color(0xFFD0021B);
-  static const _redDark = Color(0xFF9B001A);
 
   const _GroundCard({
     required this.groundId,
@@ -533,14 +516,14 @@ class _GroundCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // ── Thumbnail ──────────────────────────────────────────────────
+            // Thumbnail
             ClipRRect(
               borderRadius: const BorderRadius.horizontal(
                 left: Radius.circular(16),
               ),
               child: SizedBox(
-                width: 120,
-                height: 120,
+                width: 115,
+                height: 115,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -569,38 +552,37 @@ class _GroundCard extends StatelessWidget {
                             color: Colors.grey[200],
                             child: const Icon(
                               Icons.sports_outlined,
-                              size: 40,
+                              size: 38,
                               color: Colors.grey,
                             ),
                           ),
-                    // Instant book tag
                     if (isActive)
                       Positioned(
-                        bottom: 10,
+                        bottom: 8,
                         left: 0,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                            horizontal: 7,
+                            vertical: 3,
                           ),
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             color: _red,
-                            borderRadius: const BorderRadius.horizontal(
-                              right: Radius.circular(8),
+                            borderRadius: BorderRadius.horizontal(
+                              right: Radius.circular(6),
                             ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: const [
-                              Icon(Icons.bolt, size: 11, color: Colors.white),
+                              Icon(Icons.bolt, size: 10, color: Colors.white),
                               SizedBox(width: 2),
                               Text(
                                 'INSTANT BOOK',
                                 style: TextStyle(
-                                  fontSize: 9,
+                                  fontSize: 8,
                                   fontWeight: FontWeight.w800,
                                   color: Colors.white,
-                                  letterSpacing: 0.4,
+                                  letterSpacing: 0.3,
                                 ),
                               ),
                             ],
@@ -611,42 +593,48 @@ class _GroundCard extends StatelessWidget {
                 ),
               ),
             ),
-            // ── Info ───────────────────────────────────────────────────────
+            // Info
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       name,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF111111),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Row(
                       children: [
-                        Icon(Icons.sports, size: 13, color: _red),
-                        const SizedBox(width: 4),
-                        Text(
-                          sport,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _red,
+                        Icon(Icons.sports, size: 12, color: _red),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(
+                            sport,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _red,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Text(' · ', style: TextStyle(color: Colors.grey)),
-                        Expanded(
+                        const Text(
+                          ' · ',
+                          style: TextStyle(color: Colors.grey, fontSize: 11),
+                        ),
+                        Flexible(
                           child: Text(
                             city,
                             style: const TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               color: Colors.grey,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -654,20 +642,20 @@ class _GroundCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Row(
                       children: [
                         Icon(
                           Icons.location_on_outlined,
-                          size: 12,
+                          size: 11,
                           color: Colors.grey[400],
                         ),
-                        const SizedBox(width: 3),
+                        const SizedBox(width: 2),
                         Expanded(
                           child: Text(
                             address.isNotEmpty ? address : 'Address not listed',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 10,
                               color: Colors.grey[400],
                             ),
                             maxLines: 1,
@@ -676,23 +664,23 @@ class _GroundCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         if (amenities > 0)
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 3,
+                              horizontal: 6,
+                              vertical: 2,
                             ),
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFECEE),
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(5),
                             ),
                             child: Text(
                               '$amenities amenities',
                               style: const TextStyle(
-                                fontSize: 10,
+                                fontSize: 9,
                                 fontWeight: FontWeight.w600,
                                 color: _red,
                               ),
@@ -703,14 +691,14 @@ class _GroundCard extends StatelessWidget {
                           Text(
                             '₹${price.toStringAsFixed(0)}',
                             style: const TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.w900,
                               color: _red,
                             ),
                           ),
                           const Text(
-                            ' /hr',
-                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                            '/hr',
+                            style: TextStyle(fontSize: 10, color: Colors.grey),
                           ),
                         ],
                       ],

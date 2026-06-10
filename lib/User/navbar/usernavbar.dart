@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:slotbooking/data/theam/app_theam.dart';
 
 class UserNavBar extends StatelessWidget {
   final int currentIndex;
 
   const UserNavBar({super.key, required this.currentIndex});
-
-  static const _green = Color(0xFF0D5C3A);
-  static const _bg = Color(0xFFF5F7F5);
 
   static const _items = [
     _NavItem(icon: Icons.grid_view_rounded, label: 'Home', route: '/user/home'),
@@ -39,8 +37,8 @@ class UserNavBar extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.07),
-            blurRadius: 20,
+            color: AppTheme.primaryRed.withOpacity(0.10),
+            blurRadius: 22,
             offset: const Offset(0, -4),
           ),
         ],
@@ -54,6 +52,7 @@ class UserNavBar extends StatelessWidget {
             children: List.generate(_items.length, (i) {
               final item = _items[i];
               final isActive = currentIndex == i;
+
               return GestureDetector(
                 onTap: () {
                   if (!isActive) context.go(item.route);
@@ -66,9 +65,7 @@ class UserNavBar extends StatelessWidget {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: isActive
-                        ? _green.withOpacity(0.1)
-                        : Colors.transparent,
+                    color: isActive ? AppTheme.lightRed : Colors.transparent,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -77,7 +74,9 @@ class UserNavBar extends StatelessWidget {
                       Icon(
                         item.icon,
                         size: 22,
-                        color: isActive ? _green : Colors.grey[400],
+                        color: isActive
+                            ? AppTheme.primaryRed
+                            : AppTheme.inactive,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -87,7 +86,9 @@ class UserNavBar extends StatelessWidget {
                           fontWeight: isActive
                               ? FontWeight.w700
                               : FontWeight.w400,
-                          color: isActive ? _green : Colors.grey[400],
+                          color: isActive
+                              ? AppTheme.primaryRed
+                              : AppTheme.inactive,
                         ),
                       ),
                     ],
@@ -106,6 +107,7 @@ class _NavItem {
   final IconData icon;
   final String label;
   final String route;
+
   const _NavItem({
     required this.icon,
     required this.label,

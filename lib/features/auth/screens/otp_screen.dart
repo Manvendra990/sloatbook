@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:slotbooking/data/theam/app_theam.dart';
+import 'package:slotbooking/shared/widgets/app_button.dart';
+import 'package:slotbooking/shared/widgets/apptext.dart';
+import 'package:slotbooking/shared/widgets/otpinput.dart';
 import '../providers/auth_provider.dart';
 
 class OtpScreen extends ConsumerStatefulWidget {
@@ -16,21 +19,13 @@ class OtpScreen extends ConsumerStatefulWidget {
 
 class _OtpScreenState extends ConsumerState<OtpScreen>
     with SingleTickerProviderStateMixin {
-  static const _green = Color(0xFF0D5C3A);
-  static const _greenLight = Color(0xFFE8F5EE);
-  static const _bg = Color(0xFFF5F7F5);
-
-  final List<TextEditingController> _controllers = List.generate(
-    6,
-    (_) => TextEditingController(),
-  );
-  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
-
   String? _verificationId;
   bool _isSending = true;
   bool _isVerifying = false;
   bool _isResending = false;
   String? _error;
+  String _otp = '';
+  int _resetTrigger = 0; // increment to clear OtpInput boxes
 
   int _secondsLeft = 30;
   Timer? _timer;
@@ -59,11 +54,10 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
   void dispose() {
     _timer?.cancel();
     _animCtrl.dispose();
-    for (final c in _controllers) c.dispose();
-    for (final f in _focusNodes) f.dispose();
     super.dispose();
   }
 
+  // ── Timer ──────────────────────────────────────────────────────────────────
   void _startTimer() {
     _timer?.cancel();
     setState(() => _secondsLeft = 30);
@@ -76,6 +70,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
     });
   }
 
+  // ── Send OTP ───────────────────────────────────────────────────────────────
   Future<void> _sendOtp() async {
     setState(() {
       _isSending = true;
@@ -85,12 +80,9 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: widget.phoneNumber,
       timeout: const Duration(seconds: 60),
-
-      // Auto-verified on Android (no OTP box needed)
       verificationCompleted: (PhoneAuthCredential credential) async {
         await _signInWithCredential(credential);
       },
-
       verificationFailed: (FirebaseAuthException e) {
         setState(() {
           _isSending = false;
@@ -104,27 +96,28 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
           _isSending = false;
         });
         _startTimer();
-        _focusNodes[0].requestFocus();
       },
-
       codeAutoRetrievalTimeout: (String verificationId) {
         _verificationId = verificationId;
       },
     );
   }
 
+  // ── Resend ─────────────────────────────────────────────────────────────────
   Future<void> _resendOtp() async {
     if (_secondsLeft > 0 || _isResending) return;
-    setState(() => _isResending = true);
-    for (final c in _controllers) c.clear();
-    _focusNodes[0].requestFocus();
+    setState(() {
+      _isResending = true;
+      _resetTrigger++; // clears OtpInput boxes
+      _otp = '';
+    });
     await _sendOtp();
     setState(() => _isResending = false);
   }
 
+  // ── Verify ─────────────────────────────────────────────────────────────────
   Future<void> _verifyOtp() async {
-    final otp = _controllers.map((c) => c.text).join();
-    if (otp.length != 6) {
+    if (_otp.length != 6) {
       setState(() => _error = 'Please enter the complete 6-digit OTP.');
       return;
     }
@@ -140,35 +133,27 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
 
     final credential = PhoneAuthProvider.credential(
       verificationId: _verificationId!,
-      smsCode: otp,
+      smsCode: _otp,
     );
     await _signInWithCredential(credential);
   }
 
   Future<void> _signInWithCredential(PhoneAuthCredential credential) async {
-    // Use AuthNotifier so Firestore doc is created automatically
     final role = await ref
         .read(authNotifierProvider.notifier)
         .signInWithPhoneCredential(credential);
 
     if (!mounted) return;
-
     setState(() => _isVerifying = false);
 
     if (role != null) {
-      // Navigate based on role
-      context.go(switch (role) {
-        _ => '/user/home',
-      });
+      context.go('/user/home');
     } else {
-      // Error is already in authState, but also set local error for OTP box UI
       final err = ref.read(authNotifierProvider).error;
       setState(() => _error = err ?? 'Verification failed.');
       ref.read(authNotifierProvider.notifier).clearError();
     }
   }
-
-  String get _enteredOtp => _controllers.map((c) => c.text).join();
 
   String _friendlyError(String code) => switch (code) {
     'invalid-verification-code' => 'Invalid OTP. Please check and try again.',
@@ -179,10 +164,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
     _ => 'Verification failed. Please try again.',
   };
 
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: AppTheme.background,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fade,
@@ -195,34 +181,36 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
                 children: [
                   const SizedBox(height: 40),
 
-                  // Back + Logo
+                  // ── Top bar: Back + Logo ───────────────────────────────────
                   Row(
                     children: [
+                      // Back button
                       GestureDetector(
                         onTap: () => context.pop(),
                         child: Container(
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppTheme.surface,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFDDE0DD)),
+                            border: Border.all(color: Colors.grey.shade200),
                           ),
                           child: Icon(
                             Icons.arrow_back_ios_new_rounded,
                             size: 16,
-                            color: Colors.grey[700],
+                            color: AppTheme.textSecondary,
                           ),
                         ),
                       ),
                       const Spacer(),
+                      // Logo
                       Row(
                         children: [
                           Container(
                             width: 36,
                             height: 36,
                             decoration: BoxDecoration(
-                              color: _green,
+                              color: AppTheme.primaryRed,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Icon(
@@ -232,14 +220,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Text(
+                          AppText(
                             'KINETIC',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 2.5,
-                              color: _green,
-                            ),
+                            variant: AppTextVariant.titleLarge,
+                            color: AppTheme.primaryRed,
+                            letterSpacing: 2.5,
                           ),
                         ],
                       ),
@@ -248,31 +233,26 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
 
                   const SizedBox(height: 48),
 
-                  // Icon
+                  // ── SMS icon ───────────────────────────────────────────────
                   Container(
                     width: 80,
                     height: 80,
-                    decoration: const BoxDecoration(
-                      color: _greenLight,
+                    decoration: BoxDecoration(
+                      color: AppTheme.lightRed,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.sms_outlined,
-                      color: _green,
+                      color: AppTheme.primaryRed,
                       size: 38,
                     ),
                   ),
                   const SizedBox(height: 24),
 
-                  // Title
-                  const Text(
+                  // ── Title & subtitle ───────────────────────────────────────
+                  AppText.headlineMedium(
                     'Verify Your Number',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0E1A13),
-                      letterSpacing: -0.4,
-                    ),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 10),
                   RichText(
@@ -280,7 +260,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
                     text: TextSpan(
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.grey[500],
+                        color: Colors.grey.shade500,
                         height: 1.5,
                       ),
                       children: [
@@ -289,7 +269,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
                           text: widget.phoneNumber,
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF0E1A13),
+                            color: AppTheme.textPrimary,
                           ),
                         ),
                       ],
@@ -298,48 +278,31 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
 
                   const SizedBox(height: 40),
 
-                  // Sending state
+                  // ── Sending state ──────────────────────────────────────────
                   if (_isSending)
                     Column(
                       children: [
-                        const CircularProgressIndicator(color: _green),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Sending OTP…',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[500],
-                          ),
+                        const CircularProgressIndicator(
+                          color: AppTheme.primaryRed,
                         ),
+                        const SizedBox(height: 16),
+                        AppText.bodyMedium('Sending OTP…'),
                       ],
                     )
                   else ...[
-                    // OTP boxes
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: List.generate(
-                        6,
-                        (i) => _OtpBox(
-                          controller: _controllers[i],
-                          focusNode: _focusNodes[i],
-                          onChanged: (val) {
-                            if (val.isNotEmpty && i < 5)
-                              _focusNodes[i + 1].requestFocus();
-                            setState(() {});
-                            if (_enteredOtp.length == 6) _verifyOtp();
-                          },
-                          onBackspace: () {
-                            if (_controllers[i].text.isEmpty && i > 0) {
-                              _focusNodes[i - 1].requestFocus();
-                            }
-                          },
-                        ),
-                      ),
+                    // ── OTP Input ────────────────────────────────────────────
+                    OtpInput(
+                      resetTrigger: _resetTrigger,
+                      onChanged: (val) => setState(() => _otp = val),
+                      onCompleted: (val) {
+                        setState(() => _otp = val);
+                        _verifyOtp();
+                      },
                     ),
 
                     const SizedBox(height: 16),
 
-                    // Error
+                    // ── Error banner ─────────────────────────────────────────
                     if (_error != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -347,25 +310,24 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.red[50],
+                          color: AppTheme.error.withOpacity(0.06),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.red[200]!),
+                          border: Border.all(
+                            color: AppTheme.error.withOpacity(0.3),
+                          ),
                         ),
                         child: Row(
                           children: [
                             Icon(
                               Icons.error_outline_rounded,
                               size: 16,
-                              color: Colors.red[600],
+                              color: AppTheme.error,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
+                              child: AppText.bodyMedium(
                                 _error!,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.red[700],
-                                ),
+                                color: AppTheme.error,
                               ),
                             ),
                           ],
@@ -374,52 +336,24 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
 
                     const SizedBox(height: 28),
 
-                    // Verify button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: (_isVerifying || _enteredOtp.length != 6)
-                            ? null
-                            : _verifyOtp,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _green,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          disabledBackgroundColor: _green.withOpacity(0.5),
-                        ),
-                        child: _isVerifying
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
-                                ),
-                              )
-                            : const Text(
-                                'Verify & Continue',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                      ),
+                    // ── Verify button ────────────────────────────────────────
+                    AppButton.primary(
+                      label: 'Verify & Continue',
+                      isLoading: _isVerifying,
+                      disabled: _otp.length != 6,
+                      onPressed: _otp.length == 6 ? _verifyOtp : null,
                     ),
 
                     const SizedBox(height: 24),
 
-                    // Resend
+                    // ── Resend row ───────────────────────────────────────────
                     GestureDetector(
                       onTap: _secondsLeft == 0 ? _resendOtp : null,
                       child: RichText(
                         text: TextSpan(
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[500],
+                            color: Colors.grey.shade500,
                           ),
                           children: [
                             const TextSpan(text: "Didn't receive OTP? "),
@@ -432,8 +366,8 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
                               style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 color: _secondsLeft > 0
-                                    ? Colors.grey[400]
-                                    : _green,
+                                    ? Colors.grey.shade400
+                                    : AppTheme.primaryRed,
                               ),
                             ),
                           ],
@@ -443,14 +377,14 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
 
                     const SizedBox(height: 32),
 
-                    // Security note
+                    // ── Security note ────────────────────────────────────────
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: _greenLight,
+                        color: AppTheme.lightRed,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -458,17 +392,13 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
                           const Icon(
                             Icons.verified_user_outlined,
                             size: 18,
-                            color: _green,
+                            color: AppTheme.primaryRed,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: Text(
+                            child: AppText.bodyMedium(
                               'Your number is secured with end-to-end encryption.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _green.withOpacity(0.8),
-                                height: 1.4,
-                              ),
+                              color: AppTheme.primaryRed.withOpacity(0.8),
                             ),
                           ),
                         ],
@@ -481,77 +411,6 @@ class _OtpScreenState extends ConsumerState<OtpScreen>
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── OTP Box — uses KeyboardListener (replaces deprecated RawKeyboardListener) ──
-class _OtpBox extends StatelessWidget {
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onBackspace;
-
-  static const _green = Color(0xFF0D5C3A);
-
-  const _OtpBox({
-    required this.controller,
-    required this.focusNode,
-    required this.onChanged,
-    required this.onBackspace,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 46,
-      height: 56,
-      child: KeyboardListener(
-        focusNode: FocusNode(),
-        onKeyEvent: (event) {
-          if (event is KeyDownEvent &&
-              event.logicalKey == LogicalKeyboardKey.backspace &&
-              controller.text.isEmpty) {
-            onBackspace();
-          }
-        },
-        child: TextFormField(
-          controller: controller,
-          focusNode: focusNode,
-          keyboardType: TextInputType.number,
-          textAlign: TextAlign.center,
-          maxLength: 1,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF0E1A13),
-          ),
-          decoration: InputDecoration(
-            counterText: '',
-            filled: true,
-            fillColor: controller.text.isNotEmpty
-                ? const Color(0xFFE8F5EE)
-                : Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[200]!),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: controller.text.isNotEmpty ? _green : Colors.grey[200]!,
-                width: controller.text.isNotEmpty ? 1.5 : 1,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: _green, width: 2),
-            ),
-          ),
-          onChanged: onChanged,
         ),
       ),
     );

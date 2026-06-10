@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:slotbooking/data/theam/app_theam.dart';
+import 'package:slotbooking/shared/widgets/app_button.dart';
+import 'package:slotbooking/shared/widgets/apptext.dart';
 
 class UserLoginScreen extends StatefulWidget {
   const UserLoginScreen({super.key});
@@ -11,12 +14,7 @@ class UserLoginScreen extends StatefulWidget {
 
 class _UserLoginScreenState extends State<UserLoginScreen>
     with SingleTickerProviderStateMixin {
-  static const _green = Color(0xFF0D5C3A);
-  static const _greenLight = Color(0xFFE8F5EE);
-  static const _bg = Color(0xFFF5F7F5);
-
   final _phoneCtrl = TextEditingController();
-  bool _isLoading = false;
 
   late final AnimationController _animCtrl;
   late final Animation<double> _fade;
@@ -58,9 +56,6 @@ class _UserLoginScreenState extends State<UserLoginScreen>
       return;
     }
     FocusScope.of(context).unfocus();
-
-    // ✅ Fixed: use query parameter instead of 'extra'
-    // Route: /otp?phone=+91xxxxxxxxxx
     context.push('/user/otp?phone=${Uri.encodeComponent('+91$phone')}');
   }
 
@@ -68,17 +63,19 @@ class _UserLoginScreenState extends State<UserLoginScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: Colors.red[700],
+        backgroundColor: AppTheme.error,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
 
+  bool get _phoneReady => _phoneCtrl.text.length == 10;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: AppTheme.background,
       body: SafeArea(
         child: FadeTransition(
           opacity: _fade,
@@ -99,7 +96,7 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                         width: 52,
                         height: 52,
                         decoration: BoxDecoration(
-                          color: _green,
+                          color: AppTheme.primaryRed,
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Icon(
@@ -109,14 +106,11 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                         ),
                       ),
                       const SizedBox(width: 12),
-                      const Text(
+                      AppText(
                         'KINETIC',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 3,
-                          color: _green,
-                        ),
+                        variant: AppTextVariant.headlineMedium,
+                        color: AppTheme.primaryRed,
+                        letterSpacing: 3,
                       ),
                     ],
                   ),
@@ -124,24 +118,13 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                   const SizedBox(height: 48),
 
                   // ── Welcome ───────────────────────────────────────────────
-                  const Text(
+                  AppText.headlineLarge(
                     'Welcome Athlete',
-                    style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0E1A13),
-                      letterSpacing: -0.5,
-                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 10),
-                  Text(
+                  AppText.bodyMedium(
                     'Enter your mobile number to access\nyour performance dashboard.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[500],
-                      height: 1.5,
-                    ),
                     textAlign: TextAlign.center,
                   ),
 
@@ -150,13 +133,9 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                   // ── Phone field label ─────────────────────────────────────
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Mobile Number',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[700],
-                      ),
+                    child: AppText.label(
+                      'MOBILE NUMBER',
+                      color: AppTheme.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -164,9 +143,9 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                   // ── Phone input ───────────────────────────────────────────
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppTheme.surface,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFDDE0DD)),
+                      border: Border.all(color: Colors.grey.shade200),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.04),
@@ -183,9 +162,9 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                             horizontal: 14,
                             vertical: 16,
                           ),
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             border: Border(
-                              right: BorderSide(color: Color(0xFFDDE0DD)),
+                              right: BorderSide(color: Colors.grey.shade200),
                             ),
                           ),
                           child: Row(
@@ -193,16 +172,12 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                               Icon(
                                 Icons.phone_outlined,
                                 size: 18,
-                                color: Colors.grey[500],
+                                color: AppTheme.textSecondary,
                               ),
                               const SizedBox(width: 6),
-                              Text(
+                              AppText.bodyLarge(
                                 '+91',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[700],
-                                ),
+                                color: AppTheme.textSecondary,
                               ),
                             ],
                           ),
@@ -220,16 +195,18 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
-                              color: Color(0xFF0E1A13),
+                              color: AppTheme.textPrimary,
                             ),
                             decoration: InputDecoration(
                               hintText: 'Enter 10 digit number',
                               hintStyle: TextStyle(
-                                color: Colors.grey[400],
+                                color: Colors.grey.shade400,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w400,
                               ),
                               border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
                               counterText: '',
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -241,15 +218,15 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                           ),
                         ),
 
-                        // Green check when 10 digits filled
-                        if (_phoneCtrl.text.length == 10)
+                        // Red check when 10 digits filled
+                        if (_phoneReady)
                           Padding(
                             padding: const EdgeInsets.only(right: 14),
                             child: Container(
                               width: 22,
                               height: 22,
                               decoration: const BoxDecoration(
-                                color: _green,
+                                color: AppTheme.primaryRed,
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -266,46 +243,11 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                   const SizedBox(height: 20),
 
                   // ── Continue button ───────────────────────────────────────
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _continue,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _phoneCtrl.text.length == 10
-                            ? _green
-                            : _green.withOpacity(0.5),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2.5,
-                              ),
-                            )
-                          : const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'Continue',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.3,
-                                  ),
-                                ),
-                                SizedBox(width: 8),
-                                Icon(Icons.arrow_forward_rounded, size: 20),
-                              ],
-                            ),
-                    ),
+                  AppButton.primary(
+                    label: 'Continue',
+                    onPressed: _phoneReady ? _continue : null,
+                    disabled: !_phoneReady,
+                    trailingIcon: const Icon(Icons.arrow_forward_rounded),
                   ),
 
                   const SizedBox(height: 36),
@@ -313,20 +255,15 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                   // ── Secure divider ────────────────────────────────────────
                   Row(
                     children: [
-                      Expanded(child: Divider(color: Colors.grey[300])),
+                      Expanded(child: Divider(color: Colors.grey.shade300)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
+                        child: AppText.label(
                           'SECURE ACCESS',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.5,
-                            color: Colors.grey[400],
-                          ),
+                          color: Colors.grey.shade400,
                         ),
                       ),
-                      Expanded(child: Divider(color: Colors.grey[300])),
+                      Expanded(child: Divider(color: Colors.grey.shade300)),
                     ],
                   ),
 
@@ -361,29 +298,13 @@ class _UserLoginScreenState extends State<UserLoginScreen>
                   const SizedBox(height: 36),
 
                   // ── Login as Admin ────────────────────────────────────────
-                  GestureDetector(
-                    onTap: () => context.go('/admin/login'),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.admin_panel_settings_outlined,
-                          size: 16,
-                          color: Colors.grey[500],
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Login as Admin',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                            decoration: TextDecoration.underline,
-                            decorationColor: Colors.grey[400],
-                          ),
-                        ),
-                      ],
+                  AppButton.ghost(
+                    label: 'Login as Admin',
+                    onPressed: () => context.go('/admin/login'),
+                    leadingIcon: const Icon(
+                      Icons.admin_panel_settings_outlined,
                     ),
+                    width: null,
                   ),
 
                   const SizedBox(height: 32),
@@ -408,9 +329,9 @@ class _FeatureChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFEEF0EE)),
+        border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -421,16 +342,9 @@ class _FeatureChip extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(icon, size: 22, color: const Color(0xFF0D5C3A)),
+          Icon(icon, size: 22, color: AppTheme.primaryRed),
           const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
-            ),
-          ),
+          AppText.bodyMedium(label),
         ],
       ),
     );
