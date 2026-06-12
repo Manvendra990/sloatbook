@@ -1,10 +1,7 @@
-//
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
-import 'razorpay_service.dart';
 
 class BookingPaymentScreen extends StatefulWidget {
   final Map<String, dynamic> bookingData;
@@ -16,25 +13,7 @@ class BookingPaymentScreen extends StatefulWidget {
 }
 
 class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
-  static const _razorpayKey = 'rzp_test_Sx8TW4wytAZwan';
-  late RazorpayService _razorpayService;
   bool _isProcessing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _razorpayService = RazorpayService(
-      onSuccess: _handlePaymentSuccess,
-      onError: _handlePaymentError,
-      onExternalWallet: _handleExternalWallet,
-    );
-  }
-
-  @override
-  void dispose() {
-    _razorpayService.dispose();
-    super.dispose();
-  }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -71,7 +50,7 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
       if (hours > 0) return '${hours}h';
       if (minutes > 0) return '${minutes}m';
     }
-    return '1h';
+    return '1 Hour';
   }
 
   int get _amount {
@@ -98,21 +77,18 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // ─── Payment flow ─────────────────────────────────────────────────────────
+  // ─── Confirm & Save ───────────────────────────────────────────────────────
 
-  Future<void> _openCheckout() async {
+  Future<void> _confirmBooking() async {
     if (_isProcessing) return;
-    if (_amount <= 0) {
-      _showSnack('Invalid payment amount.');
-      return;
-    }
 
+    // Slot availability check
     final alreadyBooked = await FirebaseFirestore.instance
-        .collection('bookings')
+        .collection('admin_bookings')
         .where('groundId', isEqualTo: _groundId)
         .where('date', isEqualTo: widget.bookingData['date'])
         .where('slotId', isEqualTo: widget.bookingData['slotId'])
-        .where('status', isEqualTo: 'confirmed')
+        .where('bookingStatus', isEqualTo: 'confirmed')
         .get();
 
     if (alreadyBooked.docs.isNotEmpty) {
@@ -120,45 +96,35 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
       return;
     }
 
-    final options = {
-      'key': _razorpayKey,
-      'amount': _amount * 100,
-      'name': _groundName,
-      'description':
-          widget.bookingData['slotLabel'] as String? ?? 'Slot payment',
-      'prefill': {'contact': _userPhone},
-      'theme': {'color': '#0D5C3A'},
-    };
-
-    try {
-      await _razorpayService.openCheckout(options: options);
-    } catch (e) {
-      _showSnack('Unable to open payment gateway.');
-    }
-  }
-
-  Future<void> _handlePaymentSuccess(PaymentSuccessResponse response) async {
     setState(() => _isProcessing = true);
 
     try {
-      await _saveBookingAndTransaction(response.paymentId ?? '');
+      await _saveBooking();
 
       if (!mounted) return;
+
+      // Success dialog
       await showDialog<void>(
         context: context,
+        barrierDismissible: false,
         builder: (ctx) => AlertDialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          title: const Text('Payment Successful 🎉'),
+          title: const Text('Booking Confirmed 🎉'),
           content: const Text(
-            'Your booking has been confirmed.\nYou can view it in your bookings.',
+            'Your slot has been confirmed.\nYou can view it in your bookings.',
           ),
           actions: [
             ElevatedButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D5C3A),
+                backgroundColor: const Color(0xFFD32F2F),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: const Text('Done', style: TextStyle(color: Colors.white)),
             ),
@@ -167,41 +133,17 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
       );
 
       if (!mounted) return;
-      Navigator.pop(context);
+      // Navigate to home
+      context.go('/user/home');
     } catch (e) {
-      _showSnack('Failed to save booking: $e');
+      _showSnack('Failed to confirm booking: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  void _handlePaymentError(PaymentFailureResponse response) {
-    debugPrint('Payment error code   : ${response.code}');
-    debugPrint('Payment error message: ${response.message}');
-    _showSnack('Payment failed: ${response.message}');
-  }
-
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    _showSnack('External wallet selected: ${response.walletName}');
-  }
-
   // ─── Firestore writes ─────────────────────────────────────────────────────
-  //
-  //  Three collections written atomically in one batch:
-  //
-  //  1. /user_bookings/{bookingId}
-  //       → queried by userId  → user's booking history screen
-  //
-  //  2. /user_transactions/{bookingId}
-  //       → queried by userId  → user's payment / transaction history screen
-  //
-  //  3. /admin_revenue/{adminId}/transactions/{bookingId}
-  //       → scoped under adminId → admin revenue & income report
-  //
-  //  All three share the same bookingId so cross-collection joins are trivial.
-  //
-  // ──────────────────────────────────────────────────────────────────────────
-  Future<void> _saveBookingAndTransaction(String razorpayPaymentId) async {
+  Future<void> _saveBooking() async {
     final startTime = _startTime;
     final endTime = _endTime;
     final now = DateTime.now();
@@ -227,20 +169,14 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
     final bookingRef = db.collection('user_bookings').doc();
     final bookingId = bookingRef.id;
 
-    // ── 1. /user_bookings/{bookingId} ─────────────────────────────────────
+    // 1. user_bookings
     final bookingDoc = {
       'bookingId': bookingId,
-
-      // ── User (for user-side booking history queries) ──
       'userId': _userId,
       'userPhone': _userPhone,
-
-      // ── Ground & admin ──
       'groundId': _groundId,
       'groundName': _groundName,
       'adminId': _adminId,
-
-      // ── Slot ──
       'date': dateKey,
       'slotId': widget.bookingData['slotId'] ?? '',
       'slotLabel': widget.bookingData['slotLabel'] ?? '',
@@ -256,64 +192,45 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
             )
           : null,
       'timeDuretion': durationMap,
-
-      // ── Payment ──
       'amount': _amount,
       'currency': 'INR',
-      'razorpayPaymentId': razorpayPaymentId,
-
-      // ── Status ──
+      'paymentMethod': 'cash',
       'bookingStatus': 'confirmed',
       'paymentStatus': 'paid',
       'status': 'confirmed',
-
       'createdAt': FieldValue.serverTimestamp(),
     };
 
-    // ── 2. /user_transactions/{bookingId} ─────────────────────────────────
+    // 2. user_transactions
     final transactionDoc = {
       'transactionId': bookingId,
-      'bookingId': bookingId, // ← cross-ref to user_bookings
-      // ── User (primary key for user transaction history) ──
+      'bookingId': bookingId,
       'userId': _userId,
       'userPhone': _userPhone,
-
-      // ── What was paid for ──
       'groundId': _groundId,
       'groundName': _groundName,
-      'adminId': _adminId, // ← cross-ref to admin_revenue
+      'adminId': _adminId,
       'slotId': widget.bookingData['slotId'] ?? '',
       'slotLabel': widget.bookingData['slotLabel'] ?? '',
       'date': dateKey,
-
-      // ── Payment details ──
       'amount': _amount,
       'currency': 'INR',
-      'paymentMethod': 'razorpay',
-      'razorpayPaymentId': razorpayPaymentId,
+      'paymentMethod': 'cash',
       'paymentStatus': 'success',
       'transactionType': 'booking_payment',
-
       'paidAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
     };
 
-    // ── 3. /admin_revenue/{adminId}/transactions/{bookingId} ──────────────
+    // 3. admin_revenue
     final adminRevenueDoc = {
       'transactionId': bookingId,
-      'bookingId': bookingId, // ← cross-ref to user_bookings
-      // ── Admin (document path already scopes to adminId) ──
+      'bookingId': bookingId,
       'adminId': _adminId,
-
-      // ── Ground ──
       'groundId': _groundId,
       'groundName': _groundName,
-
-      // ── User (admin can see who paid) ──
-      'userId': _userId, // ← key link for admin → user lookup
+      'userId': _userId,
       'userPhone': _userPhone,
-
-      // ── Slot ──
       'slotId': widget.bookingData['slotId'] ?? '',
       'slotLabel': widget.bookingData['slotLabel'] ?? '',
       'date': dateKey,
@@ -322,23 +239,17 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
               DateTime(startTime.year, startTime.month, startTime.day),
             )
           : null,
-
-      // ── Revenue figures ──
       'amount': _amount,
       'currency': 'INR',
-      'paymentMethod': 'razorpay',
-      'razorpayPaymentId': razorpayPaymentId,
+      'paymentMethod': 'cash',
       'paymentStatus': 'success',
-
       'paidAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
     };
 
-    // ── Atomic batch — all three succeed or all three fail ────────────────
     final batch = db.batch();
 
     batch.set(bookingRef, bookingDoc);
-
     batch.set(
       db.collection('user_transactions').doc(bookingId),
       transactionDoc,
@@ -355,200 +266,429 @@ class _BookingPaymentScreenState extends State<BookingPaymentScreen> {
       );
     }
 
-    await batch.commit();
-  }
+    // 4. Update admin_bookings — find matching slot using groundId + startTime
+    if (startTime == null) {
+      throw Exception('Start time is missing');
+    }
 
-  // ─── UI ───────────────────────────────────────────────────────────────────
+    debugPrint('================ ADMIN BOOKING UPDATE CHECK ================');
+    debugPrint('groundId      : $_groundId');
+    debugPrint('startTime     : $startTime');
+    debugPrint('bookingStatus : available');
+    debugPrint('============================================================');
+
+    final adminBookingQuery = await db
+        .collection('admin_bookings')
+        .where('groundId', isEqualTo: _groundId)
+        .where('startTime', isEqualTo: Timestamp.fromDate(startTime))
+        .where('bookingStatus', isEqualTo: 'available')
+        .limit(1)
+        .get();
+
+    debugPrint('Admin booking found: ${adminBookingQuery.docs.length}');
+
+    if (adminBookingQuery.docs.isEmpty) {
+      throw Exception('Slot not found or already booked');
+    }
+
+    final adminBookingDoc = adminBookingQuery.docs.first;
+
+    debugPrint('Matched admin_booking docId: ${adminBookingDoc.id}');
+    debugPrint('Matched admin_booking data: ${adminBookingDoc.data()}');
+
+    batch.update(adminBookingDoc.reference, {
+      'bookingStatus': 'confirmed',
+      'paymentStatus': 'paid',
+      'userId': _userId,
+      'userPhone': _userPhone,
+      'bookingId': bookingId,
+      'confirmedAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+    // ─── UI ───────────────────────────────────────────────────────────────────
+  }
 
   @override
   Widget build(BuildContext context) {
     final slotLabel = widget.bookingData['slotLabel'] as String? ?? 'Slot';
     final bookingStatus =
-        widget.bookingData['bookingStatus'] as String? ?? 'unavailable';
-    final paymentStatus =
-        widget.bookingData['paymentStatus'] as String? ?? 'unpaid';
+        widget.bookingData['bookingStatus'] as String? ?? 'available';
+
+    final timeLabel = '${_formatTime(_startTime)} - ${_formatTime(_endTime)}';
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF2F2F2),
       appBar: AppBar(
-        title: const Text('Payment'),
-        backgroundColor: const Color(0xFF0D5C3A),
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: GestureDetector(
+          onTap: () => context.pop(),
+          child: const Icon(Icons.arrow_back, color: Colors.black),
+        ),
+        title: const Text(
+          'Confirm Booking',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Confirm your booking details',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF0E1A13),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _InfoCard(
-                        title: 'Ground',
-                        value: _groundName,
-                        icon: Icons.sports_outlined,
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCard(
-                        title: 'Slot',
-                        value: slotLabel,
-                        icon: Icons.access_time_rounded,
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCard(
-                        title: 'Date',
-                        value: _formatDate(_startTime),
-                        icon: Icons.calendar_today_rounded,
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCard(
-                        title: 'Time',
-                        value:
-                            '${_formatTime(_startTime)} – ${_formatTime(_endTime)}',
-                        icon: Icons.schedule_rounded,
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCard(
-                        title: 'Duration',
-                        value: _formatDuration(),
-                        icon: Icons.timeline_rounded,
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCard(
-                        title: 'Amount',
-                        value: '₹$_amount',
-                        icon: Icons.payments_outlined,
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCard(
-                        title: 'Booking status',
-                        value: bookingStatus.toUpperCase(),
-                        icon: Icons.info_outline,
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCard(
-                        title: 'Payment status',
-                        value: paymentStatus.toUpperCase(),
-                        icon: Icons.account_balance_wallet_rounded,
-                      ),
-                      if (_adminId.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _InfoCard(
-                          title: 'Admin ID',
-                          value: _adminId,
-                          icon: Icons.admin_panel_settings_rounded,
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-              ),
-              SafeArea(
-                top: false,
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: _isProcessing ? null : _openCheckout,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0D5C3A),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Review your selection',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
                       ),
                     ),
-                    child: _isProcessing
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                            'Pay ₹$_amount',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                    const SizedBox(height: 4),
+                    Text(
+                      'Please confirm the details below before proceeding to pay.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Details Card ───────────────────────────────────
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        children: [
+                          // Ground row
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEBEB),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Icon(
+                                    Icons.location_on_rounded,
+                                    color: Color(0xFFD32F2F),
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'GROUND',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey.shade500,
+                                          letterSpacing: 1.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _groundName,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                  ),
+
+                          Divider(height: 1, color: Colors.grey.shade100),
+
+                          // 2x2 grid
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _GridCell(
+                                        icon: Icons.calendar_today_rounded,
+                                        iconColor: const Color(0xFFD32F2F),
+                                        iconBg: const Color(0xFFFFEBEB),
+                                        label: 'DATE',
+                                        value: _formatDate(_startTime),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _GridCell(
+                                        icon: Icons.access_time_rounded,
+                                        iconColor: const Color(0xFFD32F2F),
+                                        iconBg: const Color(0xFFFFEBEB),
+                                        label: 'TIME',
+                                        value: timeLabel,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _GridCell(
+                                        icon: Icons.bolt_rounded,
+                                        iconColor: const Color(0xFFD32F2F),
+                                        iconBg: const Color(0xFFFFEBEB),
+                                        label: 'DURATION',
+                                        value: _formatDuration(),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _GridCell(
+                                        icon:
+                                            Icons.check_circle_outline_rounded,
+                                        iconColor: const Color(0xFF2E7D32),
+                                        iconBg: const Color(0xFFE8F5E9),
+                                        label: 'BOOKING STATUS',
+                                        value: bookingStatus.toUpperCase(),
+                                        valueColor: const Color(0xFF2E7D32),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // ── Payment Summary Card ───────────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Booking Fee',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              Text(
+                                '₹${_amount.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(
+                              children: List.generate(
+                                40,
+                                (i) => Expanded(
+                                  child: Container(
+                                    height: 1,
+                                    color: i % 2 == 0
+                                        ? Colors.grey.shade300
+                                        : Colors.transparent,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total Amount',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              Text(
+                                '₹$_amount',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFD32F2F),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+
+            // ── Bottom bar ─────────────────────────────────────────────
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.verified_user_outlined,
+                        size: 14,
+                        color: Colors.grey.shade500,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Secure Encrypted Payment',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : _confirmBooking,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFD32F2F),
+                        disabledBackgroundColor: const Color(
+                          0xFFD32F2F,
+                        ).withOpacity(0.6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: _isProcessing
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              'Pay Now  •  ₹$_amount',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ─── Reusable info card ────────────────────────────────────────────────────
+// ─── Grid cell widget ─────────────────────────────────────────────────────────
 
-class _InfoCard extends StatelessWidget {
-  final String title;
-  final String value;
+class _GridCell extends StatelessWidget {
   final IconData icon;
+  final Color iconColor;
+  final Color iconBg;
+  final String label;
+  final String value;
+  final Color? valueColor;
 
-  const _InfoCard({
-    required this.title,
-    required this.value,
+  const _GridCell({
     required this.icon,
+    required this.iconColor,
+    required this.iconBg,
+    required this.label,
+    required this.value,
+    this.valueColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFEEF0EE)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F5EE),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 20, color: const Color(0xFF0D5C3A)),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: iconBg,
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6E7D72),
-                  ),
+          child: Icon(icon, size: 16, color: iconColor),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade500,
+                  letterSpacing: 1.1,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0E1A13),
-                  ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: valueColor ?? Colors.black,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

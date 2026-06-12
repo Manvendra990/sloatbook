@@ -1,8 +1,13 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:slotbooking/data/datasources/slot_remote_datasource.dart';
+import 'package:slotbooking/data/models/slot_model.dart';
+import 'package:slotbooking/data/theam/app_theam.dart';
+import 'package:slotbooking/shared/widgets/app_button.dart';
+import 'package:slotbooking/shared/widgets/apptext.dart';
 
 class SlotBookingScreen extends StatefulWidget {
   final String groundId;
@@ -13,35 +18,11 @@ class SlotBookingScreen extends StatefulWidget {
 }
 
 class _SlotBookingScreenState extends State<SlotBookingScreen> {
-  static const _green = Color(0xFF0D5C3A);
-  static const _greenLight = Color(0xFFE8F5EE);
-  static const _bg = Color(0xFFF5F7F5);
+  final _repo = SlotRepository();
 
   DateTime _selectedDate = DateTime.now();
-  String? _selectedSlotId;
-  Map<String, dynamic>? _selectedSlotData;
+  SlotModel? _selectedSlot;
   bool _isBooking = false;
-
-  List<Map<String, String>> get _timeSlots {
-    final slots = <Map<String, String>>[];
-    for (int h = 5; h <= 22; h++) {
-      final start = TimeOfDay(hour: h, minute: 0);
-      final end = TimeOfDay(hour: h + 1, minute: 0);
-      slots.add({
-        'id': '${h.toString().padLeft(2, '0')}00',
-        'start': _formatTime(start),
-        'end': _formatTime(end),
-        'label': '${_formatTime(start)} – ${_formatTime(end)}',
-      });
-    }
-    return slots;
-  }
-
-  String _formatTime(TimeOfDay t) {
-    final hour = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
-    final period = t.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$hour:00 $period';
-  }
 
   String get _dateKey => DateFormat('yyyy-MM-dd').format(_selectedDate);
 
@@ -53,79 +34,6 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     return 0;
   }
 
-  String _formatDurationLabel(
-    Map<String, dynamic>? data,
-    DateTime start,
-    DateTime end,
-  ) {
-    if (data != null && data['timeDuretion'] is Map) {
-      final durationMap = Map<String, dynamic>.from(
-        data['timeDuretion'] as Map,
-      );
-      final hours = durationMap['hour'] is num
-          ? (durationMap['hour'] as num).toInt()
-          : 0;
-      final minutes = durationMap['minute'] is num
-          ? (durationMap['minute'] as num).toInt()
-          : 0;
-      if (hours > 0 && minutes > 0) return '${hours}h ${minutes}m';
-      if (hours > 0) return '${hours}h';
-      if (minutes > 0) return '${minutes}m';
-    }
-
-    final duration = end.difference(start);
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    if (hours > 0 && minutes > 0) return '${hours}h ${minutes}m';
-    if (hours > 0) return '${hours}h';
-    if (minutes > 0) return '${minutes}m';
-    return '1h';
-  }
-
-  Map<String, dynamic> _normalizeSlotEntry(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data();
-    final startTimestamp = data['startTime'] as Timestamp?;
-    final endTimestamp = data['endTime'] as Timestamp?;
-    final start = startTimestamp?.toDate() ?? DateTime.now();
-    final end = endTimestamp?.toDate() ?? start.add(const Duration(hours: 1));
-    final durationLabel = _formatDurationLabel(data, start, end);
-    final amount = _parsePrice(data['amount']);
-    final status =
-        (data['bookingStatus'] as String?)?.toLowerCase() ?? 'available';
-    final slotKey = '${start.hour.toString().padLeft(2, '0')}00';
-
-    return {
-      'docId': doc.id,
-      'slotId': slotKey,
-      'label':
-          '${DateFormat('h:mm a').format(start)} – ${DateFormat('h:mm a').format(end)}',
-      'start': start,
-      'end': end,
-      'durationLabel': durationLabel,
-      'amount': amount,
-      'bookingStatus': status,
-      'paymentStatus': data['paymentStatus'] as String? ?? '',
-      'adminId': data['adminId'] as String? ?? '',
-      'raw': data,
-    };
-  }
-
-  bool _bookingMatchesSelectedDate(Map<String, dynamic> data) {
-    final selectedDay = DateFormat('yyyy-MM-dd').format(_selectedDate);
-    if (data['slotDate'] is Timestamp) {
-      return DateFormat(
-            'yyyy-MM-dd',
-          ).format((data['slotDate'] as Timestamp).toDate()) ==
-          selectedDay;
-    }
-    if (data['date'] is String) {
-      return data['date'] == selectedDay;
-    }
-    return false;
-  }
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -135,10 +43,10 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
           colorScheme: const ColorScheme.light(
-            primary: _green,
+            primary: AppTheme.primaryRed,
             onPrimary: Colors.white,
             surface: Colors.white,
-            onSurface: Color(0xFF0E1A13),
+            onSurface: AppTheme.textPrimary,
           ),
         ),
         child: child!,
@@ -147,36 +55,29 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     if (picked != null) {
       setState(() {
         _selectedDate = picked;
-        _selectedSlotId = null;
-        _selectedSlotData = null;
+        _selectedSlot = null;
       });
     }
   }
 
-  // ── Book Slot — navigate to payment with the selected slot data ───────
   Future<void> _bookSlot(Map<String, dynamic> groundData) async {
-    if (_selectedSlotId == null || _selectedSlotData == null) return;
-
+    if (_selectedSlot == null) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       _showSnack('Please login to book a slot.');
       return;
     }
 
-    final slot = _selectedSlotData!;
-    final amount =
-        slot['amount'] as int? ?? _parsePrice(groundData['pricePerHour']);
-    final start = slot['start'] as DateTime;
-    final end = slot['end'] as DateTime;
+    final slot = _selectedSlot!;
+    final amount = slot.amount > 0
+        ? slot.amount
+        : _parsePrice(groundData['pricePerHour']);
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Confirm Booking',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+        title: AppText.titleLarge('Confirm Booking'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,7 +91,7 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
             _ConfirmRow(
               icon: Icons.access_time_rounded,
               label: 'Slot',
-              value: slot['label'] as String,
+              value: slot.label,
             ),
             const SizedBox(height: 8),
             _ConfirmRow(
@@ -203,118 +104,38 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
+            child: AppText.bodyMedium('Cancel'),
           ),
-          ElevatedButton(
+          AppButton.primary(
+            label: 'Continue to Payment',
+            width: null,
+            height: 44,
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _green,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            child: const Text('Continue to Payment'),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) return;
-
-    final paymentPayload = {
-      'groundId': widget.groundId,
-      'groundName': groundData['name'] ?? '',
-      'userId': user.uid,
-      'userPhone': user.phoneNumber ?? '',
-      'date': _dateKey,
-      'slotId': _selectedSlotId,
-      'slotLabel': slot['label'],
-      'startTime': start,
-      'endTime': end,
-      'durationLabel': slot['durationLabel'],
-      'timeDuretion': {
-        'hour': end.difference(start).inHours,
-        'minute': end.difference(start).inMinutes.remainder(60),
-      },
-      'amount': amount,
-      'bookingStatus': slot['bookingStatus'] as String? ?? 'available',
-      'paymentStatus': slot['paymentStatus'] as String? ?? 'unpaid',
-      'adminId': slot['adminId'] as String? ?? '',
-    };
-
-    if (!mounted) return;
-    context.go('/user/payment', extra: paymentPayload);
+    if (confirmed != true || !mounted) return;
+    context.go(
+      '/user/payment',
+      extra: slot.toPaymentPayload(
+        groundId: widget.groundId,
+        groundName: groundData['name'] as String? ?? '',
+        userId: user.uid,
+        userPhone: user.phoneNumber ?? '',
+        date: _dateKey,
+      ),
+    );
   }
 
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: Colors.red[700],
+        backgroundColor: AppTheme.error,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  void _showSuccess() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 70,
-              height: 70,
-              decoration: const BoxDecoration(
-                color: _greenLight,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check_circle_rounded,
-                color: _green,
-                size: 44,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Booking Confirmed!',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0E1A13),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your slot has been booked successfully.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-            ),
-          ],
-        ),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                context.pop();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _green,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: const Text('Done'),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -322,98 +143,89 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: AppTheme.background,
+      // ── AppBar — matches image: back + title + bell ───────────────────────
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.background,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: GestureDetector(
           onTap: () => context.pop(),
-          child: Container(
-            margin: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F7F5),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFDDE0DD)),
-            ),
-            child: Icon(
-              Icons.arrow_back_ios_new_rounded,
-              size: 16,
-              color: Colors.grey[700],
-            ),
+          child: const Icon(
+            Icons.arrow_back,
+            color: AppTheme.textPrimary,
+            size: 24,
           ),
         ),
         title: const Text(
           'Book a Slot',
           style: TextStyle(
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF0E1A13),
+            color: AppTheme.textPrimary,
           ),
         ),
-        centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Icon(
+              Icons.notifications_outlined,
+              color: AppTheme.textPrimary,
+              size: 24,
+            ),
+          ),
+        ],
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('grounds')
-            .doc(widget.groundId)
-            .snapshots(),
+        stream: _repo.groundStream(widget.groundId),
         builder: (context, groundSnap) {
           if (!groundSnap.hasData) {
             return const Center(
-              child: CircularProgressIndicator(color: _green),
+              child: CircularProgressIndicator(color: AppTheme.primaryRed),
             );
           }
           final groundData = groundSnap.data!.data() ?? {};
           final pricePerHour = _parsePrice(groundData['pricePerHour']);
 
           return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('bookings')
-                .where('groundId', isEqualTo: widget.groundId)
-                .snapshots(),
+            stream: _repo.bookingsStream(widget.groundId),
             builder: (context, bookingSnap) {
               if (bookingSnap.connectionState == ConnectionState.waiting &&
                   !bookingSnap.hasData) {
                 return const Center(
-                  child: CircularProgressIndicator(color: _green),
+                  child: CircularProgressIndicator(color: AppTheme.primaryRed),
                 );
               }
 
-              final docs = bookingSnap.data?.docs ?? [];
-              final slotEntries =
-                  docs
-                      .where((d) => _bookingMatchesSelectedDate(d.data()))
-                      .map(_normalizeSlotEntry)
-                      .toList()
-                    ..sort(
-                      (a, b) => (a['start'] as DateTime).compareTo(
-                        b['start'] as DateTime,
-                      ),
-                    );
-              final hasNoBookings = slotEntries.isEmpty;
+              final slots = _repo.mergeSlots(
+                selectedDate: _selectedDate,
+                bookingDocs: bookingSnap.data?.docs ?? [],
+                pricePerHour: pricePerHour,
+              );
 
               return Column(
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildGroundSummary(groundData),
+                          _buildGroundCard(groundData),
+                          const SizedBox(height: 24),
+                          _buildDateSection(),
                           const SizedBox(height: 20),
-                          _buildDateSelector(),
-                          const SizedBox(height: 20),
-                          if (hasNoBookings) _buildNoBookingsBanner(),
                           _buildLegend(),
-                          const SizedBox(height: 16),
-                          _buildSlotGrid(slotEntries, pricePerHour),
+                          const SizedBox(height: 14),
+                          _buildSlotGrid(slots),
+                          const SizedBox(height: 20),
+                          _buildGroundBanner(groundData),
                           const SizedBox(height: 20),
                         ],
                       ),
                     ),
                   ),
-                  _buildBookButton(groundData),
+                  _buildBottomBar(groundData),
                 ],
               );
             },
@@ -423,102 +235,66 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     );
   }
 
-  Widget _buildNoBookingsBanner() {
-    final isToday = _dateKey == DateFormat('yyyy-MM-dd').format(DateTime.now());
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: _greenLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _green.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: _green.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.event_available_rounded,
-              color: _green,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isToday
-                      ? 'All slots available today!'
-                      : 'Bookings coming soon',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _green,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  isToday
-                      ? 'No bookings yet for today. Pick any slot below.'
-                      : 'No bookings found for this date. All slots are open.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGroundSummary(Map<String, dynamic> data) {
+  // ── Ground card — matches image layout ────────────────────────────────────
+  Widget _buildGroundCard(Map<String, dynamic> data) {
     final price = _parsePrice(data['pricePerHour']);
+    final name = data['name'] as String? ?? 'Ground';
+    final address = data['address'] as String? ?? '';
+    final city = data['city'] as String? ?? '';
+
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFEEF0EE)),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
         children: [
+          // Icon badge
           Container(
-            width: 48,
-            height: 48,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
-              color: _greenLight,
+              color: AppTheme.lightRed,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.sports_outlined, color: _green, size: 26),
+            child: const Icon(
+              Icons.sports_cricket_rounded,
+              color: AppTheme.primaryRed,
+              size: 24,
+            ),
           ),
           const SizedBox(width: 12),
+          // Name + address
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  data['name'] ?? 'Ground',
+                  name,
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0E1A13),
+                    color: AppTheme.textPrimary,
                   ),
                 ),
+                const SizedBox(height: 3),
                 Text(
-                  '${data['address'] ?? ''}, ${data['city'] ?? ''}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                  '$address, $city'.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                    color: AppTheme.textSecondary,
+                  ),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
+          // Price
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -527,12 +303,12 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
-                  color: _green,
+                  color: AppTheme.primaryRed,
                 ),
               ),
               Text(
                 'per hour',
-                style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
               ),
             ],
           ),
@@ -541,21 +317,51 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     );
   }
 
-  Widget _buildDateSelector() {
+  // ── Date section — header row + horizontal scroller ───────────────────────
+  Widget _buildDateSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Select Date',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF0E1A13),
-          ),
+        // "Select Date" + "Pick Date" on same row
+        Row(
+          children: [
+            const Text(
+              'Select Date',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: _pickDate,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.calendar_month_rounded,
+                    size: 16,
+                    color: AppTheme.primaryRed,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Pick Date',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primaryRed,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
+
+        // Horizontal date list
         SizedBox(
-          height: 72,
+          height: 76,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: 14,
@@ -565,19 +371,22 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
               final isSelected =
                   _dateKey == DateFormat('yyyy-MM-dd').format(date);
               final isToday = i == 0;
+
               return GestureDetector(
                 onTap: () => setState(() {
                   _selectedDate = date;
-                  _selectedSlotId = null;
+                  _selectedSlot = null;
                 }),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 52,
+                  duration: const Duration(milliseconds: 180),
+                  width: 56,
                   decoration: BoxDecoration(
-                    color: isSelected ? _green : Colors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    color: isSelected ? AppTheme.primaryRed : AppTheme.surface,
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: isSelected ? _green : const Color(0xFFDDE0DD),
+                      color: isSelected
+                          ? AppTheme.primaryRed
+                          : Colors.grey.shade200,
                     ),
                   ),
                   child: Column(
@@ -589,19 +398,19 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: isSelected
-                              ? Colors.white.withOpacity(0.8)
-                              : Colors.grey[400],
+                              ? Colors.white.withOpacity(0.85)
+                              : AppTheme.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         DateFormat('d').format(date),
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 22,
                           fontWeight: FontWeight.w800,
                           color: isSelected
                               ? Colors.white
-                              : const Color(0xFF0E1A13),
+                              : AppTheme.textPrimary,
                         ),
                       ),
                       if (isToday)
@@ -609,7 +418,9 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
                           width: 4,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: isSelected ? Colors.white : _green,
+                            color: isSelected
+                                ? Colors.white
+                                : AppTheme.primaryRed,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -620,49 +431,24 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
             },
           ),
         ),
+
         const SizedBox(height: 10),
+
+        // Full date label
         Row(
           children: [
             Icon(
               Icons.calendar_today_outlined,
               size: 14,
-              color: Colors.grey[500],
+              color: AppTheme.textSecondary,
             ),
             const SizedBox(width: 6),
             Text(
               DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate),
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey[600],
+                color: AppTheme.textSecondary,
                 fontWeight: FontWeight.w500,
-              ),
-            ),
-            const Spacer(),
-            GestureDetector(
-              onTap: _pickDate,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: _greenLight,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.date_range_rounded, size: 14, color: _green),
-                    SizedBox(width: 4),
-                    Text(
-                      'Pick Date',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _green,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
           ],
@@ -671,33 +457,54 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     );
   }
 
+  // ── Legend — circle icons matching image ──────────────────────────────────
   Widget _buildLegend() {
     return Row(
       children: [
-        const Text(
-          'Available Slots',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF0E1A13),
+        // Available — empty circle
+        _LegendItem(
+          child: Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.grey.shade400, width: 1.5),
+            ),
           ),
+          label: 'Available',
         ),
-        const Spacer(),
-        _LegendDot(color: Colors.white, label: 'Available', border: true),
-        const SizedBox(width: 12),
-        const _LegendDot(color: _green, label: 'Selected'),
-        const SizedBox(width: 12),
-        _LegendDot(color: Colors.grey[200]!, label: 'Booked'),
+        const SizedBox(width: 16),
+        // Selected — filled red circle
+        _LegendItem(
+          child: Container(
+            width: 16,
+            height: 16,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primaryRed,
+            ),
+          ),
+          label: 'Selected',
+        ),
+        const SizedBox(width: 16),
+        // Booked — filled grey circle
+        _LegendItem(
+          child: Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey.shade300,
+            ),
+          ),
+          label: 'Booked',
+        ),
       ],
     );
   }
 
-  Widget _buildSlotGrid(
-    List<Map<String, dynamic>> slotEntries,
-    int pricePerHour,
-  ) {
-    final now = DateTime.now();
-
+  // ── Slot grid — matches image exactly ────────────────────────────────────
+  Widget _buildSlotGrid(List<SlotModel> slots) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -705,102 +512,111 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
         crossAxisCount: 2,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
-        childAspectRatio: 2.4,
+        childAspectRatio: 2.0,
       ),
-      itemCount: slotEntries.length,
+      itemCount: slots.length,
       itemBuilder: (context, i) {
-        final slot = slotEntries[i];
-        final slotId = slot['slotId'] as String;
-        final isSelected = _selectedSlotId == slotId;
-        final start = slot['start'] as DateTime;
-        final end = slot['end'] as DateTime;
-        final status = (slot['bookingStatus'] as String).toLowerCase();
-        final isBooked = status != 'available';
-        final isPastSlot = end.isBefore(now);
-        final disabled = isBooked || isPastSlot;
-        final label = slot['label'] as String;
-        final durationLabel = slot['durationLabel'] as String;
-        final amount = slot['amount'] as int;
-        final statusLabel = isBooked
-            ? status[0].toUpperCase() + status.substring(1)
-            : 'Available';
+        final slot = slots[i];
+        final isSelected = _selectedSlot?.slotId == slot.slotId;
+        final isBooked = !slot.isAvailable;
+        final isPast = slot.isPast;
+        final disabled = slot.isDisabled;
+
+        // ── Colors per state ──────────────────────────────────────────────
+        Color bgColor, borderColor;
+        Color timeColor, priceColor, durationColor;
+
+        if (isPast && slot.isAvailable) {
+          // past-available: greyed text, no border highlight
+          bgColor = AppTheme.surface;
+          borderColor = Colors.grey.shade200;
+          timeColor = Colors.grey.shade400;
+          priceColor = Colors.grey.shade400;
+          durationColor = Colors.grey.shade400;
+        } else if (isBooked) {
+          bgColor = AppTheme.surface;
+          borderColor = Colors.grey.shade200;
+          timeColor = Colors.grey.shade400;
+          priceColor = Colors.grey.shade400;
+          durationColor = Colors.grey.shade400;
+        } else if (isSelected) {
+          bgColor = AppTheme.surface;
+          borderColor = AppTheme.primaryRed;
+          timeColor = AppTheme.textPrimary;
+          priceColor = AppTheme.primaryRed;
+          durationColor = AppTheme.textSecondary;
+        } else {
+          bgColor = AppTheme.surface;
+          borderColor = Colors.grey.shade200;
+          timeColor = AppTheme.textPrimary;
+          priceColor = AppTheme.textSecondary;
+          durationColor = AppTheme.textSecondary;
+        }
 
         return GestureDetector(
           onTap: disabled
               ? null
               : () => setState(() {
-                  if (isSelected) {
-                    _selectedSlotId = null;
-                    _selectedSlotData = null;
-                  } else {
-                    _selectedSlotId = slotId;
-                    _selectedSlotData = slot;
-                  }
+                  _selectedSlot = isSelected ? null : slot;
                 }),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: isBooked
-                  ? Colors.grey[200]
-                  : isPastSlot
-                  ? Colors.grey[100]
-                  : isSelected
-                  ? _green
-                  : Colors.white,
+              color: bgColor,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isSelected
-                    ? _green
-                    : isBooked
-                    ? Colors.grey[300]!
-                    : const Color(0xFFDDE0DD),
-                width: isSelected ? 2 : 1,
+                color: borderColor,
+                width: isSelected ? 1.5 : 1,
               ),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: _green.withOpacity(0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ]
-                  : [],
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isBooked || isPastSlot
-                          ? Colors.grey[400]
-                          : isSelected
-                          ? Colors.white
-                          : const Color(0xFF0E1A13),
-                    ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Time label — bold
+                Text(
+                  slot.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: timeColor,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    isBooked
-                        ? '$statusLabel · $durationLabel'
-                        : '₹$amount · $durationLabel',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: isBooked || isPastSlot
-                          ? Colors.grey[400]
-                          : isSelected
-                          ? Colors.white.withOpacity(0.85)
-                          : _green,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                // Price + duration row
+                Row(
+                  children: [
+                    Text(
+                      isBooked ? '' : '₹${slot.amount}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: priceColor,
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 8),
+                    Text(
+                      slot.durationLabel,
+                      style: TextStyle(fontSize: 12, color: durationColor),
+                    ),
+                    // Red dot when selected
+                    if (isSelected) ...[
+                      const Spacer(),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppTheme.primaryRed,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
         );
@@ -808,12 +624,84 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
     );
   }
 
-  Widget _buildBookButton(Map<String, dynamic> groundData) {
+  // ── Ground banner image at bottom ─────────────────────────────────────────
+  Widget _buildGroundBanner(Map<String, dynamic> data) {
+    // final images = data['images'];
+    // String? imageUrl;
+    // if (images is String && images.isNotEmpty) {
+    //   imageUrl = images;
+    // } else if (images is List && images.isNotEmpty) {
+    //   imageUrl = images.first as String?;
+    // }
+
+    final tagline =
+        data['tagline'] as String? ??
+        'Professional Turf • Floodlights included';
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        children: [
+          // Image or placeholder
+          Image.asset(
+            'assets/images/turfground.png',
+            width: double.infinity,
+            height: 160,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _bannerPlaceholder(),
+          ),
+
+          // Dark gradient overlay
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                ),
+              ),
+            ),
+          ),
+
+          // Tagline text
+          Positioned(
+            bottom: 14,
+            left: 14,
+            right: 14,
+            child: Text(
+              tagline,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bannerPlaceholder() => Container(
+    width: double.infinity,
+    height: 160,
+    decoration: BoxDecoration(
+      color: Colors.grey.shade800,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Center(
+      child: Icon(Icons.stadium_rounded, size: 48, color: Colors.grey.shade600),
+    ),
+  );
+
+  // ── Bottom bar ─────────────────────────────────────────────────────────────
+  Widget _buildBottomBar(Map<String, dynamic> groundData) {
     final price = _parsePrice(groundData['pricePerHour']);
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.surface,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.07),
@@ -825,71 +713,46 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_selectedSlotId != null) ...[
+          if (_selectedSlot != null) ...[
             Row(
               children: [
-                const Icon(Icons.access_time_rounded, size: 16, color: _green),
+                Icon(
+                  Icons.access_time_rounded,
+                  size: 16,
+                  color: AppTheme.primaryRed,
+                ),
                 const SizedBox(width: 6),
-                Text(
-                  _selectedSlotData != null
-                      ? _selectedSlotData!['label'] as String
-                      : _timeSlots.firstWhere(
-                          (s) => s['id'] == _selectedSlotId,
-                        )['label']!,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF0E1A13),
+                Expanded(
+                  child: Text(
+                    _selectedSlot!.label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 Text(
-                  '₹${_selectedSlotData != null ? _selectedSlotData!['amount'] : price}',
+                  '₹${_selectedSlot!.amount > 0 ? _selectedSlot!.amount : price}',
                   style: const TextStyle(
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
-                    color: _green,
+                    color: AppTheme.primaryRed,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
           ],
-          SizedBox(
-            width: double.infinity,
-            height: 54,
-            child: ElevatedButton(
-              onPressed: (_selectedSlotId == null || _isBooking)
-                  ? null
-                  : () => _bookSlot(groundData),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _green,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                disabledBackgroundColor: Colors.grey[300],
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: _isBooking
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : Text(
-                      _selectedSlotId == null
-                          ? 'Select a Slot to Continue'
-                          : 'Proceed to Payment',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-            ),
+          AppButton.primary(
+            label: _selectedSlot == null
+                ? 'Select a Slot to Continue'
+                : 'Proceed to Payment',
+            isLoading: _isBooking,
+            disabled: _selectedSlot == null,
+            onPressed: _selectedSlot == null
+                ? null
+                : () => _bookSlot(groundData),
           ),
         ],
       ),
@@ -897,7 +760,32 @@ class _SlotBookingScreenState extends State<SlotBookingScreen> {
   }
 }
 
-// ── Confirm Row ───────────────────────────────────────────────────────────────
+// ── Legend item helper ────────────────────────────────────────────────────────
+class _LegendItem extends StatelessWidget {
+  final Widget child;
+  final String label;
+  const _LegendItem({required this.child, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        child,
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: AppTheme.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Confirm row ───────────────────────────────────────────────────────────────
 class _ConfirmRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -912,94 +800,11 @@ class _ConfirmRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: const Color(0xFF0D5C3A)),
+        Icon(icon, size: 16, color: AppTheme.primaryRed),
         const SizedBox(width: 8),
-        Text(
-          '$label: ',
-          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF0E1A13),
-            ),
-          ),
-        ),
+        AppText.bodyMedium('$label: '),
+        Expanded(child: AppText.bodyLarge(value)),
       ],
     );
   }
 }
-
-// ── Legend Dot ────────────────────────────────────────────────────────────────
-class _LegendDot extends StatelessWidget {
-  final Color color;
-  final String label;
-  final bool border;
-  const _LegendDot({
-    required this.color,
-    required this.label,
-    this.border = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: border ? Border.all(color: Colors.grey[400]!) : null,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-      ],
-    );
-  }
-}
-
-
-
-
-// rules_version = '2';
-// service cloud.firestore {
-//   match /databases/{database}/documents {
-
-//     // Admin collection
-//     match /admin/{uid} {
-//       allow create: if request.auth != null && request.auth.uid == uid;
-//       allow read, update: if request.auth != null && request.auth.uid == uid;
-//     }
-
-//     // Users collection
-//     match /users/{uid} {
-//       allow create: if request.auth != null && request.auth.uid == uid;
-//       allow read, update: if request.auth != null && request.auth.uid == uid;
-//     }
-
-//     // Grounds collection - admin can create/read/update their own grounds
-//     match /grounds/{groundId} {
-//       allow create: if request.auth != null;
-//       allow read: if request.auth != null;
-//       allow update, delete: if request.auth != null 
-//         && resource.data.adminId == request.auth.uid;
-//     }
-
-//     // Bookings/Slots collection - admin can create slots, users can read
-//     match /bookings/{bookingId} {
-//       allow create: if request.auth != null;
-//       allow read: if request.auth != null;
-//       allow update: if request.auth != null 
-//         && (resource.data.adminId == request.auth.uid 
-//         || resource.data.userId == request.auth.uid);
-//       allow delete: if request.auth != null 
-//         && resource.data.adminId == request.auth.uid;
-//     }
-//   }
-// }

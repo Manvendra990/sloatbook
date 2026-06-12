@@ -67,6 +67,7 @@ dependencies:
   csv: ^6.0.0
   geolocator: ^14.0.2
   geocoding: ^4.0.0
+  shared_preferences: ^2.5.5
 
 flutter:
   uses-material-design: true

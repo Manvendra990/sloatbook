@@ -3,8 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:slotbooking/User/booking/transaction_history.dart';
 import 'package:slotbooking/User/navbar/usernavbar.dart';
+import 'package:slotbooking/data/theam/app_theam.dart';
+import 'package:slotbooking/shared/widgets/apptext.dart';
 
 enum DateFilter { all, today, thisWeek, thisMonth, older }
 
@@ -17,30 +18,19 @@ class BookingHistoryScreen extends StatefulWidget {
 class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   DateFilter _activeFilter = DateFilter.all;
 
-  // ── FIX 1: Resolve uid lazily so it's never stale ──
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
-  // ── Light Theme Palette ──────────────────────────────
-  static const _pageBg = Color(0xFFF5F6FA);
-  static const _white = Color(0xFFFFFFFF);
-  static const _cardBg = Color(0xFFFFFFFF);
-  static const _surfaceBg = Color(0xFFECEEF5);
-  static const _accent = Color(0xFF5B5FED);
-  static const _textPrim = Color(0xFF1A1D2E);
-  static const _textMuted = Color(0xFF888BA0);
-  static const _textHint = Color(0xFFB0B3C4);
-  static const _border = Color(0xFFECEEF5);
-  static const _green = Color(0xFF16A34A);
+  // ── Status colours (kept local — not part of AppTheme) ───────────────────
+  static const _green = AppTheme.success;
   static const _greenBg = Color(0xFFDCFCE7);
   static const _greenTxt = Color(0xFF166534);
   static const _redBg = Color(0xFFFEE2E2);
   static const _redTxt = Color(0xFF991B1B);
-  static const _redBar = Color(0xFFDC2626);
   static const _amberBg = Color(0xFFFEF3C7);
   static const _amberTxt = Color(0xFF92400E);
   static const _amberBar = Color(0xFFD97706);
-  // ────────────────────────────────────────────────────
 
+  // ── Date range ─────────────────────────────────────────────────────────────
   (DateTime?, DateTime?) get _dateRange {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
@@ -60,23 +50,19 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   }
 
   Query<Map<String, dynamic>>? get _query {
-    // ── FIX 2: Return null if user is not logged in ──
     final uid = _uid;
     if (uid == null) return null;
-
     var q = FirebaseFirestore.instance
         .collection('user_bookings')
         .where('userId', isEqualTo: uid);
     final (from, to) = _dateRange;
-    if (from != null) {
+    if (from != null)
       q = q.where(
         'createdAt',
         isGreaterThanOrEqualTo: Timestamp.fromDate(from),
       );
-    }
-    if (to != null) {
+    if (to != null)
       q = q.where('createdAt', isLessThan: Timestamp.fromDate(to));
-    }
     return q;
   }
 
@@ -85,7 +71,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       case 'confirmed':
         return _green;
       case 'cancelled':
-        return _redBar;
+        return AppTheme.error;
       default:
         return _amberBar;
     }
@@ -139,13 +125,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _pageBg,
+      backgroundColor: AppTheme.background,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(),
-            // _buildTabs(),
             _buildDateFilterChips(),
             Expanded(child: _buildList()),
           ],
@@ -155,21 +140,36 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     );
   }
 
+  // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+    return Container(
+      color: AppTheme.surface,
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
       child: Row(
         children: [
-          // _circleBtn(Icons.arrow_back_ios_new, onTap: () => context.pop()),
+          // Red accent bar
+          Container(
+            width: 4,
+            height: 28,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryRed,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Booking History',
-              style: TextStyle(
-                color: _textPrim,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
+          Expanded(child: AppText.headlineMedium('Booking History')),
+          // Stats icon button
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppTheme.lightRed,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.receipt_long_rounded,
+              color: AppTheme.primaryRed,
+              size: 20,
             ),
           ),
         ],
@@ -177,119 +177,56 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     );
   }
 
-  // Widget _circleBtn(
-  //   IconData icon, {
-  //   VoidCallback? onTap,
-  //   Color iconColor = _textPrim,
-  // }) {
-  //   return GestureDetector(
-  //     onTap: onTap,
-  //     child: Container(
-  //       width: 36,
-  //       height: 36,
-  //       decoration: const BoxDecoration(
-  //         color: _surfaceBg,
-  //         shape: BoxShape.circle,
-  //       ),
-  //       child: Icon(icon, color: iconColor, size: 17),
-  //     ),
-  //   );
-  // }
-
-  // Widget _buildTabs() {
-  //   return Padding(
-  //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-  //     child: Container(
-  //       decoration: BoxDecoration(
-  //         color: _surfaceBg,
-  //         borderRadius: BorderRadius.circular(14),
-  //       ),
-  //       padding: const EdgeInsets.all(3),
-  //       child: Row(
-  //         children: [
-  //           _tabItem('Bookings', true),
-  //           _tabItem(
-  //             'Transactions',
-  //             false,
-  //             onTap: () => context.push('/user/transaction'),
-  //           ),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
-
-  Widget _tabItem(String label, bool active, {VoidCallback? onTap}) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-            color: active ? _white : Colors.transparent,
-            borderRadius: BorderRadius.circular(11),
-            boxShadow: active
-                ? [
-                    BoxShadow(
-                      color: _accent.withOpacity(0.12),
-                      blurRadius: 6,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : null,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? _accent : _textMuted,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+  // ── Filter chips ───────────────────────────────────────────────────────────
+  Widget _buildDateFilterChips() {
+    final labels = ['All', 'Today', 'This Week', 'This Month', 'Older'];
+    final filters = DateFilter.values;
+    return Container(
+      color: AppTheme.surface,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      child: SizedBox(
+        height: 36,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: filters.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, i) {
+            final isActive = _activeFilter == filters[i];
+            return GestureDetector(
+              onTap: () => setState(() => _activeFilter = filters[i]),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: isActive ? AppTheme.primaryRed : AppTheme.background,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isActive
+                        ? AppTheme.primaryRed
+                        : Colors.grey.shade200,
+                  ),
+                ),
+                child: Text(
+                  labels[i],
+                  style: TextStyle(
+                    color: isActive ? Colors.white : AppTheme.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildDateFilterChips() {
-    final labels = ['All', 'Today', 'This Week', 'This Month', 'Older'];
-    final filters = DateFilter.values;
-    return SizedBox(
-      height: 38,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: filters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 7),
-        itemBuilder: (_, i) {
-          final isActive = _activeFilter == filters[i];
-          return GestureDetector(
-            onTap: () => setState(() => _activeFilter = filters[i]),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                color: isActive ? _accent : _white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: isActive ? _accent : _border),
-              ),
-              child: Text(
-                labels[i],
-                style: TextStyle(
-                  color: isActive ? _white : _textMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
+  // ── List ───────────────────────────────────────────────────────────────────
   Widget _buildList() {
-    // ── FIX 3: Guard against null uid / null query ──
     final query = _query;
     if (query == null) {
       return _buildEmpty('Please log in to view bookings', Icons.lock_outline);
@@ -298,17 +235,16 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: query.snapshots(),
       builder: (context, snap) {
-        // ── FIX 4: Show Firestore errors instead of silent blank screen ──
         if (snap.hasError) {
-          debugPrint('BookingHistory Firestore error: ${snap.error}');
           return _buildEmpty(
             'Error loading bookings.\nCheck Firestore index.',
             Icons.error_outline,
           );
         }
-
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: _accent));
+          return const Center(
+            child: CircularProgressIndicator(color: AppTheme.primaryRed),
+          );
         }
 
         final docs = snap.data?.docs ?? [];
@@ -329,22 +265,35 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             );
 
         return ListView(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            _buildSummaryRow(docs.length.toString(), '₹${_fmt(spent)}'),
+            _buildSummaryRow(docs.length, spent),
+            const SizedBox(height: 4),
             ...dates.expand((date) {
               final dayDocs = groups[date]!;
               return [
                 Padding(
-                  padding: const EdgeInsets.only(top: 14, bottom: 8),
-                  child: Text(
-                    _formatDate(DateTime.parse(date)).toUpperCase(),
-                    style: const TextStyle(
-                      color: _textHint,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.9,
-                    ),
+                  padding: const EdgeInsets.only(top: 20, bottom: 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: AppTheme.primaryRed,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      AppText.label(
+                        _formatDate(DateTime.parse(date)).toUpperCase(),
+                        color: AppTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Divider(color: Colors.grey.shade200, height: 1),
+                      ),
+                    ],
                   ),
                 ),
                 ...dayDocs.map(
@@ -359,213 +308,298 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     );
   }
 
-  Widget _buildSummaryRow(String total, String spent) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          Expanded(child: _summaryPill('Total bookings', total, _textPrim)),
-          const SizedBox(width: 8),
-          Expanded(child: _summaryPill('Amount spent', spent, _green)),
-        ],
-      ),
+  // ── Summary Row ────────────────────────────────────────────────────────────
+  Widget _buildSummaryRow(int total, int spent) {
+    return Row(
+      children: [
+        Expanded(
+          child: _SummaryCard(
+            icon: Icons.confirmation_number_outlined,
+            label: 'Total Bookings',
+            value: total.toString(),
+            valueColor: AppTheme.textPrimary,
+            iconBg: AppTheme.lightRed,
+            iconColor: AppTheme.primaryRed,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _SummaryCard(
+            icon: Icons.payments_outlined,
+            label: 'Amount Spent',
+            value: '₹${NumberFormat('#,##,###').format(spent)}',
+            valueColor: _green,
+            iconBg: _greenBg,
+            iconColor: _green,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _summaryPill(String label, String value, Color valueColor) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: _textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              color: valueColor,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
+  // ── Booking Card ───────────────────────────────────────────────────────────
   Widget _buildBookingCard(Map<String, dynamic> data) {
     final status = (data['bookingStatus'] as String? ?? 'pending');
     final amount = data['amount'] as int? ?? 0;
-    final bookingId = (data['bookingId'] as String? ?? '');
     final groundName = (data['groundName'] as String? ?? 'Unknown Ground');
     final slotLabel = (data['slotLabel'] as String? ?? '—');
-
-    // ── FIX 5: Guard empty paymentStatus string before indexing [0] ──
     final rawPayment = (data['paymentStatus'] as String? ?? '');
     final paymentLabel = rawPayment.isNotEmpty
         ? rawPayment[0].toUpperCase() + rawPayment.substring(1)
         : 'Unknown';
-
-    // ── FIX 6: Guard empty status string before indexing [0] ──
     final statusLabel = status.isNotEmpty
         ? status[0].toUpperCase() + status.substring(1)
         : 'Pending';
 
+    // Date from createdAt
+    String dateStr = '';
+    if (data['createdAt'] is Timestamp) {
+      dateStr = DateFormat(
+        'd MMM · h:mm a',
+      ).format((data['createdAt'] as Timestamp).toDate());
+    }
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 9),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: _cardBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: _statusBarColor(status),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(18),
-                  bottomLeft: Radius.circular(18),
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        groundName,
-                        style: const TextStyle(
-                          color: _textPrim,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _badgeBg(status),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        statusLabel,
-                        style: TextStyle(
-                          color: _badgeTxt(status),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.access_time_rounded,
-                      size: 13,
-                      color: _textHint,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      slotLabel,
-                      style: const TextStyle(color: _textMuted, fontSize: 12),
-                    ),
-                    const SizedBox(width: 12),
-                    const Icon(
-                      Icons.credit_card_rounded,
-                      size: 13,
-                      color: _textHint,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      paymentLabel,
-                      style: const TextStyle(color: _textMuted, fontSize: 12),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                const Divider(color: _border, height: 1),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '₹$amount',
-                      style: const TextStyle(
-                        color: _textPrim,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    // Text(
-                    //   bookingId.isNotEmpty
-                    //       ? '#${bookingId.length > 8 ? bookingId.substring(bookingId.length - 8) : bookingId}'
-                    //       : '—',
-                    //   style: const TextStyle(
-                    //     color: _textHint,
-                    //     fontSize: 11,
-                    //     fontFamily: 'monospace',
-                    //   ),
-                    // ),
-                  ],
-                ),
-              ],
-            ),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left status bar
+              Container(width: 4, color: _statusBarColor(status)),
+
+              // Content
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Ground name + badge
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Sport icon
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: AppTheme.lightRed,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.sports_outlined,
+                              color: AppTheme.primaryRed,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                AppText.bodyLarge(
+                                  groundName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (dateStr.isNotEmpty)
+                                  AppText.bodyMedium(dateStr),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Status badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _badgeBg(status),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                color: _badgeTxt(status),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+                      Divider(color: Colors.grey.shade100, height: 1),
+                      const SizedBox(height: 10),
+
+                      // Slot + payment + amount
+                      Row(
+                        children: [
+                          // Slot time
+                          _InfoChip(
+                            icon: Icons.access_time_rounded,
+                            label: slotLabel,
+                          ),
+                          const SizedBox(width: 8),
+                          // Payment status
+                          _InfoChip(
+                            icon: Icons.credit_card_rounded,
+                            label: paymentLabel,
+                            color: rawPayment.toLowerCase() == 'paid'
+                                ? _green
+                                : _amberTxt,
+                          ),
+                          const Spacer(),
+                          // Amount
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.lightRed,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: AppText(
+                              '₹$amount',
+                              variant: AppTextVariant.bodyLarge,
+                              color: AppTheme.primaryRed,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
+  // ── Empty State ────────────────────────────────────────────────────────────
   Widget _buildEmpty(String msg, IconData icon) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 48, color: _textHint),
-          const SizedBox(height: 12),
-          Text(
-            msg,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: _textHint, fontSize: 15),
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppTheme.lightRed,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 38, color: AppTheme.primaryRed),
+          ),
+          const SizedBox(height: 16),
+          AppText.bodyMedium(msg, textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Summary Card ──────────────────────────────────────────────────────────────
+class _SummaryCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color valueColor;
+  final Color iconBg;
+  final Color iconColor;
+
+  const _SummaryCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.valueColor,
+    required this.iconBg,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: iconColor, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppText.bodyMedium(label),
+              AppText(
+                value,
+                variant: AppTextVariant.titleLarge,
+                color: valueColor,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
-
-  String _fmt(int n) => NumberFormat('#,##,###').format(n);
 }
 
-// Stub import — replace with actual import path
-// class TransactionHistoryScreen extends StatelessWidget {
-//   const TransactionHistoryScreen({super.key});
-//   @override
-//   Widget build(BuildContext context) => const Scaffold();
-// }
+// ── Info Chip ─────────────────────────────────────────────────────────────────
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+
+  const _InfoChip({required this.icon, required this.label, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? AppTheme.textSecondary;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: c),
+        const SizedBox(width: 4),
+        AppText.bodyMedium(label, color: c),
+      ],
+    );
+  }
+}

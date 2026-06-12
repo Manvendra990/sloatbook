@@ -1,48 +1,88 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../models/slot_model.dart';
 
-class SlotRemoteDatasource {
-  final FirebaseFirestore _firestore;
+// ─────────────────────────────────────────────────────────────────────────────
+// SlotRepository — all Firestore reads for the slot booking screen
+// ─────────────────────────────────────────────────────────────────────────────
+class SlotRepository {
+  final _db = FirebaseFirestore.instance;
 
-  SlotRemoteDatasource(this._firestore);
+  // ── Ground data stream ─────────────────────────────────────────────────────
+  Stream<DocumentSnapshot<Map<String, dynamic>>> groundStream(
+    String groundId,
+  ) => _db.collection('grounds').doc(groundId).snapshots();
 
-  Stream<List<SlotModel>> watchSlotsForGround(String groundId, DateTime date) {
-    final start = DateTime(date.year, date.month, date.day);
-    final end = start.add(const Duration(days: 1));
-    return _firestore
-        .collection('slots')
-        .where('groundId', isEqualTo: groundId)
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-        .where('date', isLessThan: Timestamp.fromDate(end))
-        .orderBy('date')
-        .snapshots()
-        .map(
-          (snap) => snap.docs.map((d) => SlotModel.fromFirestore(d)).toList(),
-        );
+  // ── Raw bookings stream for a ground (all dates) ───────────────────────────
+  // We fetch ALL bookings for the ground and filter client-side by date.
+  // This avoids needing a composite Firestore index on groundId + startTime.
+  Stream<QuerySnapshot<Map<String, dynamic>>> bookingsStream(String groundId) =>
+      _db
+          .collection('admin_bookings')
+          .where('groundId', isEqualTo: groundId)
+          .snapshots();
+
+  // ── Build the merged slot list for a given date ────────────────────────────
+  //
+  // Strategy:
+  //   1. Generate all 18 hourly slots (5 AM – 10 PM) as 'available'.
+  //   2. For each Firestore booking that falls on the selected date,
+  //      find the matching hour slot and replace it with the booking data.
+  //
+  // This ensures the grid ALWAYS shows 18 slots regardless of how many
+  // bookings exist, and booked slots are correctly marked.
+
+  List<SlotModel> mergeSlots({
+    required DateTime selectedDate,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> bookingDocs,
+    required int pricePerHour,
+  }) {
+    final selectedDay = DateFormat('yyyy-MM-dd').format(selectedDate);
+
+    final result =
+        bookingDocs
+            .where((doc) {
+              final match = _matchesDate(doc.data(), selectedDay);
+
+              print('MATCH => $match');
+              print('DOC DATA => ${doc.data()}');
+
+              return match;
+            })
+            .map((doc) {
+              final slot = SlotModel.fromDoc(doc);
+
+              print('SLOT => ${slot.label}');
+              print('STATUS => ${slot.bookingStatus}');
+
+              return slot;
+            })
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+
+    print('TOTAL SLOTS => ${result.length}');
+
+    return result;
   }
 
-  Future<void> addSlot(SlotModel slot) async {
-    await _firestore.collection('slots').add(slot.toMap());
-  }
+  // ── Check if a Firestore booking doc falls on the selected date ───────────
+  bool _matchesDate(Map<String, dynamic> data, String selectedDay) {
+    if (data['slotDate'] is Timestamp) {
+      final d = (data['slotDate'] as Timestamp).toDate();
 
-  Future<void> bulkAddSlots(List<SlotModel> slots) async {
-    final batch = _firestore.batch();
-    for (final slot in slots) {
-      final ref = _firestore.collection('slots').doc();
-      batch.set(ref, slot.toMap());
+      print(
+        'SLOT DATE => ${DateFormat('yyyy-MM-dd').format(d)} | SELECTED => $selectedDay',
+      );
+
+      return DateFormat('yyyy-MM-dd').format(d) == selectedDay;
     }
-    await batch.commit();
-  }
 
-  Future<void> updateSlotStatus(String slotId, String status) async {
-    await _firestore.collection('slots').doc(slotId).update({'status': status});
-  }
+    if (data['startTime'] is Timestamp) {
+      final d = (data['startTime'] as Timestamp).toDate();
 
-  Future<void> updateSlotPrice(String slotId, double price) async {
-    await _firestore.collection('slots').doc(slotId).update({'price': price});
-  }
+      return DateFormat('yyyy-MM-dd').format(d) == selectedDay;
+    }
 
-  Future<void> deleteSlot(String slotId) async {
-    await _firestore.collection('slots').doc(slotId).delete();
+    return false;
   }
 }

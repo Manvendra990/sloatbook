@@ -8,7 +8,7 @@ class BookingRemoteDatasource {
 
   Stream<List<BookingModel>> watchAdminBookings(String adminId) {
     return _firestore
-        .collection('bookings')
+        .collection('admin_bookings')
         .where('adminId', isEqualTo: adminId)
         .orderBy('createdAt', descending: true)
         .snapshots()
@@ -24,7 +24,7 @@ class BookingRemoteDatasource {
     DateTime to,
   ) async {
     final snap = await _firestore
-        .collection('bookings')
+        .collection('admin_bookings')
         .where('adminId', isEqualTo: adminId)
         .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(from))
         .where('date', isLessThanOrEqualTo: Timestamp.fromDate(to))

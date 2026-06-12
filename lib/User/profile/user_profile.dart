@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:slotbooking/User/navbar/usernavbar.dart';
+import 'package:slotbooking/data/theam/app_theam.dart';
+import 'package:slotbooking/shared/widgets/apptext.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -19,7 +21,6 @@ class _ProfileScreenState extends State<UserProfileScreen>
   final _firestore = FirebaseFirestore.instance;
   late AnimationController _avatarController;
   late Animation<double> _avatarScale;
-
   bool _isUploadingPhoto = false;
 
   @override
@@ -43,14 +44,6 @@ class _ProfileScreenState extends State<UserProfileScreen>
   }
 
   User? get _user => _auth.currentUser;
-
-  Color _bg(BuildContext ctx) => Theme.of(ctx).scaffoldBackgroundColor;
-  Color _card(BuildContext ctx) => Theme.of(ctx).cardColor;
-  Color _text(BuildContext ctx) => Theme.of(ctx).colorScheme.onSurface;
-  Color _sub(BuildContext ctx) =>
-      Theme.of(ctx).colorScheme.onSurface.withOpacity(0.55);
-
-  static const _green = Color(0xFF0D5C3A);
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> get _userStream =>
       _firestore.collection('users').doc(_user?.uid).snapshots();
@@ -84,36 +77,8 @@ class _ProfileScreenState extends State<UserProfileScreen>
     }
   }
 
-  Future<void> _signOut() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Log out?',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        content: const Text('You will be signed out of your account.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade600,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text('Log out', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) await _auth.signOut();
-  }
+  // ── Direct logout — no confirm dialog ─────────────────────────────────────
+  Future<void> _signOut() async => await _auth.signOut();
 
   void _showSnack(String msg) {
     if (!mounted) return;
@@ -123,23 +88,19 @@ class _ProfileScreenState extends State<UserProfileScreen>
   Future<Map<String, int>> _fetchStats() async {
     final uid = _user?.uid;
     if (uid == null) return {'bookings': 0, 'spent': 0, 'grounds': 0};
-
     final snap = await _firestore
         .collection('user_bookings')
         .where('userId', isEqualTo: uid)
         .get();
-
     final total = snap.docs.fold<int>(0, (s, d) {
       final a = d.data()['amount'];
       if (a is int) return s + a;
       if (a is double) return s + a.toInt();
       return s + (int.tryParse('$a') ?? 0);
     });
-
     final grounds = snap.docs
         .map((d) => d.data()['groundId'] as String? ?? '')
         .toSet();
-
     return {
       'bookings': snap.docs.length,
       'spent': total,
@@ -150,7 +111,7 @@ class _ProfileScreenState extends State<UserProfileScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg(context),
+      backgroundColor: AppTheme.background,
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: _userStream,
         builder: (context, snapshot) {
@@ -167,10 +128,11 @@ class _ProfileScreenState extends State<UserProfileScreen>
 
           return CustomScrollView(
             slivers: [
+              // ── Header ─────────────────────────────────────────────────
               SliverAppBar(
                 expandedHeight: 280,
                 pinned: true,
-                backgroundColor: _green,
+                backgroundColor: AppTheme.primaryRed,
                 foregroundColor: Colors.white,
                 flexibleSpace: FlexibleSpaceBar(
                   background: _ProfileHeader(
@@ -185,6 +147,7 @@ class _ProfileScreenState extends State<UserProfileScreen>
                 ),
               ),
 
+              // ── Body ───────────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -198,51 +161,42 @@ class _ProfileScreenState extends State<UserProfileScreen>
                           final stats =
                               snap.data ??
                               {'bookings': 0, 'spent': 0, 'grounds': 0};
-                          return _StatsRow(
-                            stats: stats,
-                            cardColor: _card(context),
-                          );
+                          return _StatsRow(stats: stats);
                         },
                       ),
 
                       const SizedBox(height: 24),
 
-                      // Account
-                      _SectionLabel(label: 'Account', subColor: _sub(context)),
+                      // Account section
+                      _SectionLabel(label: 'Account'),
                       const SizedBox(height: 10),
                       _MenuCard(
-                        cardColor: _card(context),
                         items: [
                           _MenuItem(
                             icon: Icons.person_outline_rounded,
                             label: 'Full Name',
                             trailing: displayName,
-                            trailingColor: _sub(context),
                           ),
                           _MenuItem(
                             icon: Icons.phone_outlined,
                             label: 'Phone',
                             trailing: phone,
-                            trailingColor: _sub(context),
                           ),
                           if (email.isNotEmpty)
                             _MenuItem(
                               icon: Icons.mail_outline_rounded,
                               label: 'Email',
                               trailing: email,
-                              trailingColor: _sub(context),
                             ),
                         ],
-                        textColor: _text(context),
                       ),
 
                       const SizedBox(height: 20),
 
-                      // More
-                      _SectionLabel(label: 'More', subColor: _sub(context)),
+                      // More section
+                      _SectionLabel(label: 'More'),
                       const SizedBox(height: 10),
                       _MenuCard(
-                        cardColor: _card(context),
                         items: [
                           _MenuItem(
                             icon: Icons.history_rounded,
@@ -269,24 +223,17 @@ class _ProfileScreenState extends State<UserProfileScreen>
                             onTap: () {},
                           ),
                         ],
-                        textColor: _text(context),
                       ),
 
                       const SizedBox(height: 20),
 
+                      // Log out button using AppButton.secondary style
                       _LogoutButton(onTap: _signOut),
 
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 28),
 
                       Center(
-                        child: Text(
-                          'Ground Booking • v1.0.0',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: _sub(context),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
+                        child: AppText.bodyMedium('Ground Booking • v1.0.0'),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -303,7 +250,6 @@ class _ProfileScreenState extends State<UserProfileScreen>
 }
 
 // ─── Profile Header ───────────────────────────────────────────────────────────
-
 class _ProfileHeader extends StatelessWidget {
   final String displayName;
   final String phone;
@@ -328,13 +274,14 @@ class _ProfileHeader extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF0A4429), Color(0xFF0D5C3A), Color(0xFF1A8A57)],
+          colors: [AppTheme.darkRed, AppTheme.primaryRed, Color(0xFFE8354A)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
       ),
       child: Stack(
         children: [
+          // Decorative circles
           Positioned(
             top: -40,
             right: -40,
@@ -359,6 +306,7 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
           ),
+
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(0, 16, 0, 20),
@@ -366,6 +314,8 @@ class _ProfileHeader extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(height: 8),
+
+                  // Avatar
                   ScaleTransition(
                     scale: avatarScale,
                     child: GestureDetector(
@@ -434,7 +384,7 @@ class _ProfileHeader extends StatelessWidget {
                               child: const Icon(
                                 Icons.camera_alt_rounded,
                                 size: 14,
-                                color: Color(0xFF0D5C3A),
+                                color: AppTheme.primaryRed,
                               ),
                             ),
                           ),
@@ -442,7 +392,9 @@ class _ProfileHeader extends StatelessWidget {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 14),
+
                   Text(
                     displayName,
                     style: const TextStyle(
@@ -481,39 +433,36 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 // ─── Stats Row ────────────────────────────────────────────────────────────────
-
 class _StatsRow extends StatelessWidget {
   final Map<String, int> stats;
-  final Color cardColor;
-
-  const _StatsRow({required this.stats, required this.cardColor});
+  const _StatsRow({required this.stats});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         _StatTile(
-          cardColor: cardColor,
           icon: Icons.event_available_rounded,
           value: '${stats['bookings']}',
           label: 'Bookings',
-          iconColor: const Color(0xFF0D5C3A),
+          iconColor: AppTheme.primaryRed,
+          iconBg: AppTheme.lightRed,
         ),
         const SizedBox(width: 10),
         _StatTile(
-          cardColor: cardColor,
           icon: Icons.currency_rupee_rounded,
           value: '${stats['spent']}',
           label: 'Total Spent',
-          iconColor: Colors.blue.shade600,
+          iconColor: AppTheme.success,
+          iconBg: const Color(0xFFDCFCE7),
         ),
         const SizedBox(width: 10),
         _StatTile(
-          cardColor: cardColor,
           icon: Icons.sports_soccer_rounded,
           value: '${stats['grounds']}',
           label: 'Grounds',
-          iconColor: Colors.orange.shade600,
+          iconColor: const Color(0xFFD97706),
+          iconBg: const Color(0xFFFEF3C7),
         ),
       ],
     );
@@ -521,18 +470,18 @@ class _StatsRow extends StatelessWidget {
 }
 
 class _StatTile extends StatelessWidget {
-  final Color cardColor;
   final IconData icon;
   final String value;
   final String label;
   final Color iconColor;
+  final Color iconBg;
 
   const _StatTile({
-    required this.cardColor,
     required this.icon,
     required this.value,
     required this.label,
     required this.iconColor,
+    required this.iconBg,
   });
 
   @override
@@ -541,11 +490,12 @@ class _StatTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: cardColor,
+          color: AppTheme.surface,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade100),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -557,21 +507,15 @@ class _StatTile extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.12),
+                color: iconBg,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, size: 20, color: iconColor),
             ),
             const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-            ),
+            AppText(value, variant: AppTextVariant.headlineMedium),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF6E7D72)),
-            ),
+            AppText.bodyMedium(label),
           ],
         ),
       ),
@@ -580,52 +524,47 @@ class _StatTile extends StatelessWidget {
 }
 
 // ─── Section Label ────────────────────────────────────────────────────────────
-
 class _SectionLabel extends StatelessWidget {
   final String label;
-  final Color subColor;
-
-  const _SectionLabel({required this.label, required this.subColor});
+  const _SectionLabel({required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(left: 4),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          color: subColor,
-          letterSpacing: 1.2,
-        ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 14,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryRed,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          AppText.label(label.toUpperCase(), color: AppTheme.textSecondary),
+        ],
       ),
     );
   }
 }
 
 // ─── Menu Card ────────────────────────────────────────────────────────────────
-
 class _MenuCard extends StatelessWidget {
   final List<_MenuItem> items;
-  final Color cardColor;
-  final Color textColor;
-
-  const _MenuCard({
-    required this.items,
-    required this.cardColor,
-    required this.textColor,
-  });
+  const _MenuCard({required this.items});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: cardColor,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -637,13 +576,9 @@ class _MenuCard extends StatelessWidget {
           final item = entry.value;
           return Column(
             children: [
-              _MenuItemTile(item: item, textColor: textColor),
+              _MenuItemTile(item: item),
               if (i < items.length - 1)
-                Divider(
-                  height: 1,
-                  indent: 54,
-                  color: textColor.withOpacity(0.08),
-                ),
+                Divider(height: 1, indent: 54, color: Colors.grey.shade100),
             ],
           );
         }).toList(),
@@ -656,7 +591,6 @@ class _MenuItem {
   final IconData icon;
   final String label;
   final String? trailing;
-  final Color? trailingColor;
   final bool showArrow;
   final VoidCallback? onTap;
 
@@ -664,7 +598,6 @@ class _MenuItem {
     required this.icon,
     required this.label,
     this.trailing,
-    this.trailingColor,
     this.showArrow = false,
     this.onTap,
   });
@@ -672,9 +605,7 @@ class _MenuItem {
 
 class _MenuItemTile extends StatelessWidget {
   final _MenuItem item;
-  final Color textColor;
-
-  const _MenuItemTile({required this.item, required this.textColor});
+  const _MenuItemTile({required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -689,39 +620,26 @@ class _MenuItemTile extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: const Color(0xFF0D5C3A).withOpacity(0.1),
+                color: AppTheme.lightRed,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(item.icon, size: 18, color: const Color(0xFF0D5C3A)),
+              child: Icon(item.icon, size: 18, color: AppTheme.primaryRed),
             ),
             const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                item.label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: textColor,
-                ),
-              ),
-            ),
+            Expanded(child: AppText.bodyLarge(item.label)),
             if (item.trailing != null)
               Flexible(
-                child: Text(
+                child: AppText.bodyMedium(
                   item.trailing!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: item.trailingColor ?? textColor,
-                  ),
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
                 ),
               ),
             if (item.showArrow)
               Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
-                color: textColor.withOpacity(0.4),
+                color: AppTheme.textSecondary.withOpacity(0.5),
               ),
           ],
         ),
@@ -731,7 +649,6 @@ class _MenuItemTile extends StatelessWidget {
 }
 
 // ─── Logout Button ────────────────────────────────────────────────────────────
-
 class _LogoutButton extends StatelessWidget {
   final VoidCallback onTap;
   const _LogoutButton({required this.onTap});
@@ -744,23 +661,20 @@ class _LogoutButton extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
+          color: AppTheme.lightRed,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.red.shade200),
+          border: Border.all(color: AppTheme.primaryRed.withOpacity(0.3)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.logout_rounded, color: Colors.red.shade600, size: 20),
-            const SizedBox(width: 10),
-            Text(
-              'Log Out',
-              style: TextStyle(
-                color: Colors.red.shade600,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
+            const Icon(
+              Icons.logout_rounded,
+              color: AppTheme.primaryRed,
+              size: 20,
             ),
+            const SizedBox(width: 10),
+            AppText.bodyLarge('Log Out', color: AppTheme.primaryRed),
           ],
         ),
       ),
